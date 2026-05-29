@@ -72,6 +72,20 @@ export interface Snapshot {
   totals: Record<string, number>;
 }
 
+/** Текст ошибки FastAPI / axios для показа пользователю */
+export function extractApiError(e: unknown, fallback: string): string {
+  const err = e as { response?: { data?: { detail?: unknown } }; message?: string };
+  const detail = err.response?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((x) => (typeof x === "object" && x && "msg" in x ? String((x as { msg: string }).msg) : String(x)))
+      .join("; ");
+  }
+  if (detail && typeof detail === "object") return JSON.stringify(detail);
+  return err.message || fallback;
+}
+
 function filterParams(f?: CalcFilters): Record<string, string> {
   const p: Record<string, string> = {};
   if (f?.category) p.category = f.category;

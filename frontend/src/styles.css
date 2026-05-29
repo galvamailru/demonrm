@@ -455,6 +455,14 @@ body {
   color: var(--muted);
 }
 
+.compare-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  align-self: center;
+  flex: 1 1 100%;
+}
+
 .compare-toolbar select {
   min-width: 220px;
   padding: 0.4rem 0.6rem;

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CalcFilters,
   CalculateResponse,
@@ -8,6 +8,7 @@ import {
   calculateDimensions,
   compareCycles,
   createCycle,
+  extractApiError,
   type CycleCompareResult,
   fetchChannelsGrid,
   fetchCustomersGrid,
@@ -80,12 +81,15 @@ export default function App() {
   const selected = cycles.find((c) => c.id === selectedId) ?? null;
   const isReadOnly = selected?.status === "published";
 
-  const calcFilters: CalcFilters = {
-    category: filterCategory || undefined,
-    channel: filterChannel || undefined,
-    customer_code: filterCustomer || undefined,
-    pricing_date: pricingDate || undefined,
-  };
+  const calcFilters: CalcFilters = useMemo(
+    () => ({
+      category: filterCategory || undefined,
+      channel: filterChannel || undefined,
+      customer_code: filterCustomer || undefined,
+      pricing_date: pricingDate || undefined,
+    }),
+    [filterCategory, filterChannel, filterCustomer, pricingDate]
+  );
 
   const loadCycles = useCallback(async () => {
     const list = await fetchCycles();
@@ -170,13 +174,26 @@ export default function App() {
   }, [loadCycles]);
 
   useEffect(() => {
-    if (!selectedId || cycles.length < 2) return;
-    setCompareBaseId((prev) => prev ?? selectedId);
-    if (!compareOtherId) {
-      const other = cycles.find((c) => c.id !== selectedId);
-      if (other) setCompareOtherId(other.id);
-    }
-  }, [selectedId, cycles, compareOtherId]);
+    if (activeTab !== "compare" || cycles.length < 2) return;
+
+    setCompareBaseId((base) => {
+      const resolvedBase =
+        base != null && cycles.some((c) => c.id === base)
+          ? base
+          : (selectedId ?? cycles[0].id);
+      setCompareOtherId((other) => {
+        if (
+          other != null &&
+          other !== resolvedBase &&
+          cycles.some((c) => c.id === other)
+        ) {
+          return other;
+        }
+        return cycles.find((c) => c.id !== resolvedBase)?.id ?? cycles[1].id;
+      });
+      return resolvedBase;
+    });
+  }, [activeTab, cycles, selectedId]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -195,9 +212,9 @@ export default function App() {
     if (selectedId && activeTab === "dimensions") {
       fetchDimensionsGrid(selectedId, calcFilters)
         .then((g) => setSchemas((s) => ({ ...s, dimensions: g })))
-        .catch(() => {});
+        .catch((e) => setError(extractApiError(e, "Не удалось загрузить измерения")));
     }
-  }, [filterCategory, filterChannel, filterCustomer, pricingDate, activeTab, selectedId]);
+  }, [filterCategory, filterChannel, filterCustomer, pricingDate, activeTab, selectedId, calcFilters]);
 
   const displaySchema = (tab: GridKey): GridSchema | null => {
     const base = schemas[tab];
@@ -258,33 +275,44 @@ export default function App() {
       await reloadAll(selectedId);
       await loadCycles();
     } catch (e: unknown) {
-      const err = e as { response?: { data?: { detail?: string } } };
-      setError(err.response?.data?.detail || "Ошибка сохранения");
+      setError(extractApiError(e, "Ошибка сохранения"));
     } finally {
       setLoading(false);
     }
   };
 
+  const syncCycleParamsToServer = async (cycleId: number) => {
+    await updateCycle(cycleId, {
+      pricing_date: pricingDate || undefined,
+      filter_category: filterCategory || null,
+      filter_channel: filterChannel || null,
+      filter_customer_code: filterCustomer || null,
+    });
+  };
+
   const handleCalculate = async () => {
     if (!selectedId) return;
-    if (pending.source) await saveSourceGrid(selectedId, pending.source);
     setLoading(true);
+    setError(null);
     try {
+      if (pending.source) await saveSourceGrid(selectedId, pending.source);
+      if (pending.tiers) await saveTiersGrid(selectedId, pending.tiers);
+      setPending((p) => ({ ...p, source: undefined, tiers: undefined }));
+
+      await syncCycleParamsToServer(selectedId);
+
       const result: CalculateResponse = await calculateDimensions(selectedId, calcFilters);
+      const grid = await fetchDimensionsGrid(selectedId, calcFilters);
+
       setTotals(result.totals);
-      setMessage(`Расчёт на ${result.pricing_date}, валюта ${result.currency_code}`);
+      setSchemas((s) => ({ ...s, dimensions: grid }));
+      setMessage(
+        `Расчёт: ${result.rows.length} строк, ${result.pricing_date}, ${result.currency_code}`
+      );
       setActiveTab("dimensions");
-      setSchemas((s) => ({
-        ...s,
-        dimensions: {
-          columns: schemas.dimensions?.columns ?? [],
-          rows: result.rows,
-        },
-      }));
       await loadCycles();
     } catch (e: unknown) {
-      const err = e as { response?: { data?: { detail?: string } } };
-      setError(err.response?.data?.detail || "Ошибка расчёта");
+      setError(extractApiError(e, "Ошибка расчёта"));
     } finally {
       setLoading(false);
     }
@@ -301,8 +329,7 @@ export default function App() {
       await loadCycles();
       await reloadAll(selectedId);
     } catch (e: unknown) {
-      const err = e as { response?: { data?: { detail?: string } } };
-      setError(err.response?.data?.detail || "Ошибка публикации");
+      setError(extractApiError(e, "Ошибка публикации"));
     } finally {
       setLoading(false);
     }
@@ -348,8 +375,11 @@ export default function App() {
     activeTab === "snapshots" ||
     (activeTab === "customers" && false);
 
-  const handleCompareCycles = async () => {
-    if (!compareBaseId || !compareOtherId) return;
+  const runCompare = useCallback(async () => {
+    if (!compareBaseId || !compareOtherId || compareBaseId === compareOtherId) {
+      setCompareResult(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -357,10 +387,34 @@ export default function App() {
       setCompareResult(result);
       setMessage(`Сравнение: ${result.base_cycle_name} vs ${result.compare_cycle_name}`);
     } catch (e: unknown) {
-      const err = e as { response?: { data?: { detail?: string } } };
-      setError(err.response?.data?.detail || "Ошибка сравнения");
+      setCompareResult(null);
+      setError(extractApiError(e, "Ошибка сравнения"));
     } finally {
       setLoading(false);
+    }
+  }, [compareBaseId, compareOtherId, calcFilters]);
+
+  useEffect(() => {
+    if (activeTab !== "compare") return;
+    void runCompare();
+  }, [activeTab, runCompare]);
+
+  const pickOtherCycle = (baseId: number) =>
+    cycles.find((c) => c.id !== baseId)?.id ?? null;
+
+  const handleCompareBaseChange = (id: number) => {
+    setCompareBaseId(id);
+    if (id === compareOtherId) {
+      const other = pickOtherCycle(id);
+      if (other) setCompareOtherId(other);
+    }
+  };
+
+  const handleCompareOtherChange = (id: number) => {
+    setCompareOtherId(id);
+    if (id === compareBaseId) {
+      const base = pickOtherCycle(id);
+      if (base) setCompareBaseId(base);
     }
   };
 
@@ -403,6 +457,12 @@ export default function App() {
             const c = await createCycle(name, undefined, copyFrom);
             await loadCycles();
             setSelectedId(c.id);
+            setPricingDate(c.pricing_date?.slice(0, 10) ?? "");
+            setFilterCategory(c.filter_category ?? "");
+            setFilterChannel(c.filter_channel ?? "");
+            setFilterCustomer(c.filter_customer_code ?? "");
+            setTotals(null);
+            setCompareResult(null);
             setMessage(
               copyFrom
                 ? `Цикл «${name}» создан: скопированы данные из #${copyFrom}.`
@@ -558,16 +618,6 @@ export default function App() {
             )}
           </>
         )}
-        {activeTab === "compare" && (
-          <button
-            type="button"
-            className="btn primary"
-            disabled={loading || !compareBaseId || !compareOtherId}
-            onClick={handleCompareCycles}
-          >
-            Сравнить циклы
-          </button>
-        )}
       </section>
       )}
 
@@ -604,32 +654,51 @@ export default function App() {
 
       {activeTab === "compare" && (
         <section className="compare-toolbar">
-          <label>
-            Цикл A (база)
-            <select
-              value={compareBaseId ?? ""}
-              onChange={(e) => setCompareBaseId(Number(e.target.value))}
-            >
-              {cycles.map((c) => (
-                <option key={c.id} value={c.id}>
-                  #{c.id} {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Цикл B (сравнение)
-            <select
-              value={compareOtherId ?? ""}
-              onChange={(e) => setCompareOtherId(Number(e.target.value))}
-            >
-              {cycles.map((c) => (
-                <option key={c.id} value={c.id}>
-                  #{c.id} {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          {cycles.length < 2 ? (
+            <p className="compare-hint">
+              Для сравнения создайте минимум два цикла (кнопка «+ Цикл» в шапке).
+            </p>
+          ) : (
+            <>
+              <label>
+                Цикл A (база)
+                <select
+                  value={compareBaseId ?? ""}
+                  onChange={(e) => handleCompareBaseChange(Number(e.target.value))}
+                >
+                  {cycles.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      #{c.id} {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Цикл B (сравнение)
+                <select
+                  value={compareOtherId ?? ""}
+                  onChange={(e) => handleCompareOtherChange(Number(e.target.value))}
+                >
+                  {cycles.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      #{c.id} {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={loading || !compareBaseId || !compareOtherId}
+                onClick={() => void runCompare()}
+              >
+                Обновить
+              </button>
+              <p className="compare-hint">
+                Сравнение пересчитывается при смене циклов и параметров расчёта выше.
+              </p>
+            </>
+          )}
         </section>
       )}
 
@@ -743,7 +812,13 @@ export default function App() {
             </div>
           </div>
         ) : activeTab === "compare" ? (
-          <ExcelGrid schema={compareResult?.grid ?? null} readOnly height={520} />
+          cycles.length < 2 ? (
+            <div className="grid-placeholder">Нужно минимум два цикла.</div>
+          ) : loading && !compareResult ? (
+            <div className="grid-placeholder">Загрузка сравнения…</div>
+          ) : (
+            <ExcelGrid schema={compareResult?.grid ?? null} readOnly height={520} />
+          )
         ) : (
           <ExcelGrid
             schema={displaySchema(activeTab)}
