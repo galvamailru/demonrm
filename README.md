@@ -1,77 +1,50 @@
-# Demo NRM — Net Revenue Management (FMCG)
+# Demo NRM v2 — Net Revenue Management (FMCG)
 
-Демонстрационное веб-приложение для управления циклом NRM: редактирование исходных данных в Excel-подобных таблицах и расчёт измерений (waterfall).
+Демонстрационное веб-приложение для управления циклом NRM с расширенной моделью ценообразования.
 
-## Стек
+## Возможности v2
 
-| Компонент | Технология |
-|-----------|------------|
-| Frontend | Node.js, React, Vite, Handsontable |
-| Backend | Python 3.12, FastAPI, SQLAlchemy |
-| БД | PostgreSQL 16 |
-| Оркестрация | Docker Compose |
-
-## Цикл NRM в приложении
-
-1. **Черновик (draft)** — редактирование исходных данных (SKU, цены, скидки, объёмы).
-2. **Симуляция (simulated)** — расчёт измерений: Invoice/Net price, Gross/Net Revenue, COGS, Margin.
-3. **Утверждён (approved)** — согласование сценария.
-4. **Опубликован (published)** — данные только для чтения.
+| Функция | Описание |
+|---------|----------|
+| **Effective dating** | `valid_from` / `valid_to` на строках и промо; `pricing_date` на цикле |
+| **Промо-правила** | Приоритет, stackable / non-stackable, scope (all/sku/category/channel/customer) |
+| **Tier-скидки** | JSON в колонке `volume_tiers`: `[{"min_volume":10000,"discount_pct":2}]` |
+| **Валюта** | `currency_code` + `exchange_rate` → пересчёт в валюту цикла |
+| **UoM** | Единица (`EA`, `CS`) и `units_per_uom`; объём в базовых единицах для tiers |
+| **Налог** | `tax_rate_pct` → `tax_amount`, `net_revenue_after_tax` |
+| **Матрица** | Справочники клиентов/каналов; строки SKU×клиент×канал; «Развернуть матрицу» |
+| **Фильтры** | Категория, канал, клиент — на уровне цикла и запроса расчёта |
+| **Snapshot** | При публикации сохраняется зафиксированный расчёт в БД |
 
 ## Запуск
 
 ```bash
 cd demonrm
+docker compose down -v   # при обновлении с v1 — пересоздать БД
 docker compose up --build
 ```
 
-Откройте в браузере: **http://localhost:8080**
+- UI: http://localhost:8080  
+- API: http://localhost:8000/docs  
 
-API и документация Swagger: **http://localhost:8000/docs**
+## Порядок работы
 
-PostgreSQL на хосте: `localhost:5433` (user/password/db: `nrm`).
+1. **Клиенты / Каналы** — мастер-данные матрицы.
+2. **Матрица цен** — строки с SKU, клиентом, каналом, датами, валютой, tiers.
+3. **Промо-правила** — приоритет 1 = выше; non-stackable — только одно правило + row promo.
+4. **Параметры расчёта** — pricing date и фильтры → **Рассчитать**.
+5. **Утвердить** → **Опубликовать + Snapshot** — расчёт фиксируется.
 
-## Локальная разработка (без Docker frontend)
-
-```bash
-# Терминал 1 — только БД и API
-docker compose up postgres backend
-
-# Терминал 2 — frontend
-cd frontend
-npm install
-npm run dev
-```
-
-UI: http://localhost:5173 (прокси `/api` → backend).
-
-## Исходные данные (редактируемые)
-
-| Поле | Описание |
-|------|----------|
-| list_price | Прайс-лист |
-| contract_discount_pct | Контрактная скидка % |
-| promo_discount_pct | Промо % |
-| off_invoice_pct | Off-invoice % |
-| trade_spend_per_unit | Trade spend на единицу |
-| unit_cost | Себестоимость |
-| planned_volume | Плановый объём |
-
-## Измерения (расчёт)
-
-- **Invoice Price** = List × (1 − contract%)
-- **Net Price** = Invoice × (1 − promo%) × (1 − off-invoice%) − trade spend
-- **Gross / Net Revenue**, **COGS**, **Gross Margin**, **Margin %**
-
-## Структура проекта
+## Формула расчёта (кратко)
 
 ```
-demonrm/
-  docker-compose.yml
-  backend/          # FastAPI
-  frontend/         # React + Handsontable
+Invoice = List × (1 − contract%) × курс
+Promo   = stackable правила (мультипликативно) ИЛИ одно non-stackable
+Net     = Invoice × (1 − promo%) × (1 − tier%) × (1 − off%) − trade
+Net Rev = Net × volume(UoM)
+Tax     = Net Rev × tax%
 ```
 
-## Лицензия Handsontable
+## Миграция с v1
 
-Handsontable используется с ключом `non-commercial-and-evaluation`. Для коммерческого использования нужна отдельная лицензия.
+Схема БД изменилась. Выполните `docker compose down -v` для чистой БД или добавьте колонки вручную.

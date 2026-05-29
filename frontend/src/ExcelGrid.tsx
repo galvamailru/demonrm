@@ -16,7 +16,6 @@ function schemaToMatrix(schema: GridSchema): {
   colHeaders: string[];
   columns: GridColumn[];
   data: unknown[][];
-  hiddenIdCol: boolean;
 } {
   const hasId = schema.rows.some((r) => r.id != null && r.id !== "");
   const columns = hasId
@@ -27,6 +26,9 @@ function schemaToMatrix(schema: GridSchema): {
   const data = schema.rows.map((row) =>
     columns.map((col) => {
       const v = row[col.key];
+      if (col.type === "checkbox") {
+        return v === true || v === "true" || v === 1;
+      }
       if (col.type === "number") {
         return v === "" || v == null ? 0 : Number(v);
       }
@@ -34,7 +36,7 @@ function schemaToMatrix(schema: GridSchema): {
     })
   );
 
-  return { colHeaders, columns, data, hiddenIdCol: hasId };
+  return { colHeaders, columns, data };
 }
 
 function matrixToRows(
@@ -47,7 +49,9 @@ function matrixToRows(
       const obj: Record<string, unknown> = {};
       columns.forEach((col, i) => {
         let val: unknown = row[i];
-        if (col.type === "number") {
+        if (col.type === "checkbox") {
+          val = val === true || val === "true";
+        } else if (col.type === "number") {
           val = val === "" || val == null ? 0 : Number(val);
         }
         obj[col.key] = val;
@@ -71,31 +75,37 @@ export default function ExcelGrid({
 
   const columnsConfig = useMemo(() => {
     if (!parsed) return [];
-    return parsed.columns.map((col) => ({
-      data: parsed.columns.indexOf(col),
-      type: col.type === "number" ? ("numeric" as const) : ("text" as const),
-      readOnly: readOnly || !col.editable,
-      numericFormat:
-        col.type === "number"
-          ? { pattern: col.key.includes("pct") ? "0,0.00" : "0,0.00" }
-          : undefined,
-      width: col.width,
-    }));
+    return parsed.columns.map((col, idx) => {
+      let cellType: "numeric" | "text" | "checkbox" | "date" = "text";
+      if (col.type === "number") cellType = "numeric";
+      else if (col.type === "checkbox") cellType = "checkbox";
+      else if (col.type === "date") cellType = "date";
+
+      return {
+        data: idx,
+        type: cellType,
+        readOnly: readOnly || !col.editable,
+        numericFormat:
+          col.type === "number"
+            ? { pattern: col.key.includes("pct") ? "0,0.00" : "0,0.00" }
+            : undefined,
+        dateFormat: col.type === "date" ? "YYYY-MM-DD" : undefined,
+        width: col.width,
+      };
+    });
   }, [parsed, readOnly]);
 
   const afterChange = useCallback(() => {
     if (!parsed || !onDataChange || readOnly) return;
     const hot = hotRef.current?.hotInstance;
     if (!hot) return;
-    const raw = hot.getData() as unknown[][];
-    onDataChange(matrixToRows(parsed.columns, raw));
+    onDataChange(matrixToRows(parsed.columns, hot.getData() as unknown[][]));
   }, [parsed, onDataChange, readOnly]);
 
   useEffect(() => {
     if (!parsed || readOnly) return;
     const hot = hotRef.current?.hotInstance;
-    if (!hot) return;
-    hot.loadData(parsed.data);
+    if (hot) hot.loadData(parsed.data);
   }, [parsed, readOnly]);
 
   if (!parsed || !schema) {

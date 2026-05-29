@@ -267,6 +267,50 @@ body {
   font-weight: 600;
 }
 
+.filters-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.filters-panel h3 {
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+}
+
+.filters-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+}
+
+.filters-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.filters-row input {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  min-width: 140px;
+}
+
+.snapshot-select {
+  padding: 0.5rem 0;
+}
+
+.snapshot-select select {
+  min-width: 320px;
+  padding: 0.4rem;
+}
+
 .footer {
   margin-top: 1rem;
   font-size: 0.85rem;

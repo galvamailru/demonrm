@@ -1,18 +1,38 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  CalcFilters,
   CalculateResponse,
   Cycle,
   CycleStatus,
+  Snapshot,
   calculateDimensions,
   createCycle,
+  expandMatrix,
+  fetchChannelsGrid,
+  fetchCustomersGrid,
   fetchCycles,
   fetchDimensionsGrid,
+  fetchPromosGrid,
+  fetchSnapshotGrid,
+  fetchSnapshots,
   fetchSourceGrid,
+  saveChannelsGrid,
+  saveCustomersGrid,
+  savePromosGrid,
   saveSourceGrid,
+  updateCycle,
   updateCycleStatus,
   type GridSchema,
 } from "./api";
 import ExcelGrid from "./ExcelGrid";
+
+type TabId =
+  | "source"
+  | "promos"
+  | "customers"
+  | "channels"
+  | "dimensions"
+  | "snapshots";
 
 const STATUS_LABELS: Record<CycleStatus, string> = {
   draft: "Черновик",
@@ -21,73 +41,159 @@ const STATUS_LABELS: Record<CycleStatus, string> = {
   published: "Опубликован",
 };
 
-const WORKFLOW: { status: CycleStatus; label: string; hint: string }[] = [
-  { status: "draft", label: "1. План", hint: "Редактирование исходных данных" },
-  { status: "simulated", label: "2. Симуляция", hint: "Расчёт измерений NRM" },
-  { status: "approved", label: "3. Утверждение", hint: "Согласование сценария" },
-  { status: "published", label: "4. Публикация", hint: "Фиксация цен" },
-];
-
 export default function App() {
   const [cycles, setCycles] = useState<Cycle[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<"source" | "dimensions">("source");
-  const [sourceSchema, setSourceSchema] = useState<GridSchema | null>(null);
-  const [dimSchema, setDimSchema] = useState<GridSchema | null>(null);
-  const [pendingRows, setPendingRows] = useState<Record<string, unknown>[] | null>(null);
+  const [activeTab, setActiveTab] = useState<TabId>("source");
+  const [schemas, setSchemas] = useState<Partial<Record<TabId, GridSchema | null>>>({});
+  const [pending, setPending] = useState<Partial<Record<TabId, Record<string, unknown>[]>>>({});
   const [totals, setTotals] = useState<Record<string, number> | null>(null);
+  const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
+  const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [pricingDate, setPricingDate] = useState("");
+  const [filterCategory, setFilterCategory] = useState("");
+  const [filterChannel, setFilterChannel] = useState("");
+  const [filterCustomer, setFilterCustomer] = useState("");
+
   const selected = cycles.find((c) => c.id === selectedId) ?? null;
   const isReadOnly = selected?.status === "published";
+
+  const calcFilters: CalcFilters = {
+    category: filterCategory || undefined,
+    channel: filterChannel || undefined,
+    customer_code: filterCustomer || undefined,
+    pricing_date: pricingDate || undefined,
+  };
 
   const loadCycles = useCallback(async () => {
     const list = await fetchCycles();
     setCycles(list);
-    if (list.length && !selectedId) {
-      setSelectedId(list[0].id);
-    }
+    if (list.length && !selectedId) setSelectedId(list[0].id);
   }, [selectedId]);
 
-  const loadGrids = useCallback(async (cycleId: number) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [src, dim] = await Promise.all([
-        fetchSourceGrid(cycleId),
-        fetchDimensionsGrid(cycleId),
-      ]);
-      setSourceSchema(src);
-      setDimSchema(dim);
-      setPendingRows(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Ошибка загрузки");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const loadTab = useCallback(
+    async (tab: TabId, cycleId: number) => {
+      switch (tab) {
+        case "source":
+          setSchemas((s) => ({ ...s, source: await fetchSourceGrid(cycleId) }));
+          break;
+        case "promos":
+          setSchemas((s) => ({ ...s, promos: await fetchPromosGrid(cycleId) }));
+          break;
+        case "customers":
+          setSchemas((s) => ({ ...s, customers: await fetchCustomersGrid() }));
+          break;
+        case "channels":
+          setSchemas((s) => ({ ...s, channels: await fetchChannelsGrid() }));
+          break;
+        case "dimensions":
+          setSchemas((s) => ({
+            ...s,
+            dimensions: await fetchDimensionsGrid(cycleId, calcFilters),
+          }));
+          break;
+        case "snapshots": {
+          const list = await fetchSnapshots(cycleId);
+          setSnapshots(list);
+          if (list.length && !selectedSnapshotId) {
+            setSelectedSnapshotId(list[0].id);
+            setSchemas((s) => ({
+              ...s,
+              snapshots: await fetchSnapshotGrid(list[0].id),
+            }));
+          }
+          break;
+        }
+      }
+    },
+    [calcFilters, selectedSnapshotId]
+  );
+
+  const reloadAll = useCallback(
+    async (cycleId: number) => {
+      setLoading(true);
+      setError(null);
+      try {
+        await Promise.all([
+          loadTab("source", cycleId),
+          loadTab("promos", cycleId),
+          loadTab("customers", cycleId),
+          loadTab("channels", cycleId),
+          loadTab("dimensions", cycleId),
+          loadTab("snapshots", cycleId),
+        ]);
+        setPending({});
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Ошибка загрузки");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [loadTab]
+  );
 
   useEffect(() => {
     loadCycles().catch((e) => setError(String(e)));
   }, [loadCycles]);
 
   useEffect(() => {
-    if (selectedId) {
-      loadGrids(selectedId);
-      setTotals(null);
+    if (!selectedId) return;
+    const c = cycles.find((x) => x.id === selectedId);
+    if (c) {
+      setPricingDate(c.pricing_date?.slice(0, 10) ?? "");
+      setFilterCategory(c.filter_category ?? "");
+      setFilterChannel(c.filter_channel ?? "");
+      setFilterCustomer(c.filter_customer_code ?? "");
     }
-  }, [selectedId, loadGrids]);
+    reloadAll(selectedId);
+    setTotals(null);
+  }, [selectedId, cycles.length]);
 
-  const handleSaveSource = async () => {
-    if (!selectedId || !pendingRows) return;
+  useEffect(() => {
+    if (selectedId && activeTab === "dimensions") {
+      fetchDimensionsGrid(selectedId, calcFilters)
+        .then((g) => setSchemas((s) => ({ ...s, dimensions: g })))
+        .catch(() => {});
+    }
+  }, [filterCategory, filterChannel, filterCustomer, pricingDate, activeTab, selectedId]);
+
+  const displaySchema = (tab: TabId): GridSchema | null => {
+    const base = schemas[tab];
+    const rows = pending[tab];
+    if (!base) return null;
+    if (rows) return { ...base, rows };
+    return base;
+  };
+
+  const handleSaveCycleSettings = async () => {
+    if (!selectedId) return;
+    await updateCycle(selectedId, {
+      pricing_date: pricingDate,
+      filter_category: filterCategory || null,
+      filter_channel: filterChannel || null,
+      filter_customer_code: filterCustomer || null,
+    });
+    setMessage("Параметры цикла сохранены");
+    await loadCycles();
+  };
+
+  const handleSaveTab = async () => {
+    if (!selectedId) return;
+    const rows = pending[activeTab];
+    if (!rows) return;
     setLoading(true);
-    setError(null);
     try {
-      await saveSourceGrid(selectedId, pendingRows);
-      setMessage("Исходные данные сохранены");
-      await loadGrids(selectedId);
+      if (activeTab === "source") await saveSourceGrid(selectedId, rows);
+      else if (activeTab === "promos") await savePromosGrid(selectedId, rows);
+      else if (activeTab === "customers") await saveCustomersGrid(rows);
+      else if (activeTab === "channels") await saveChannelsGrid(rows);
+      setMessage("Сохранено");
+      setPending((p) => ({ ...p, [activeTab]: undefined }));
+      await reloadAll(selectedId);
       await loadCycles();
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } };
@@ -99,17 +205,20 @@ export default function App() {
 
   const handleCalculate = async () => {
     if (!selectedId) return;
-    if (pendingRows) {
-      await saveSourceGrid(selectedId, pendingRows);
-    }
+    if (pending.source) await saveSourceGrid(selectedId, pending.source);
     setLoading(true);
-    setError(null);
     try {
-      const result: CalculateResponse = await calculateDimensions(selectedId);
+      const result: CalculateResponse = await calculateDimensions(selectedId, calcFilters);
       setTotals(result.totals);
-      setMessage("Измерения NRM рассчитаны");
+      setMessage(`Расчёт на ${result.pricing_date}, валюта ${result.currency_code}`);
       setActiveTab("dimensions");
-      await loadGrids(selectedId);
+      setSchemas((s) => ({
+        ...s,
+        dimensions: {
+          columns: schemas.dimensions?.columns ?? [],
+          rows: result.rows,
+        },
+      }));
       await loadCycles();
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } };
@@ -119,110 +228,173 @@ export default function App() {
     }
   };
 
-  const handleAdvanceStatus = async (target: CycleStatus) => {
+  const handlePublish = async () => {
     if (!selectedId) return;
     setLoading(true);
-    setError(null);
     try {
-      if (target === "simulated") {
-        await handleCalculate();
-        return;
-      }
-      await updateCycleStatus(selectedId, target);
-      setMessage(`Статус: ${STATUS_LABELS[target]}`);
+      if (pending.source) await saveSourceGrid(selectedId, pending.source);
+      await updateCycleStatus(selectedId, "published");
+      setMessage("Опубликовано. Snapshot расчёта сохранён.");
       await loadCycles();
-      if (selectedId) await loadGrids(selectedId);
+      await reloadAll(selectedId);
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } };
-      setError(err.response?.data?.detail || "Ошибка смены статуса");
+      setError(err.response?.data?.detail || "Ошибка публикации");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleNewCycle = async () => {
-    const name = prompt("Название нового цикла NRM:");
-    if (!name?.trim()) return;
-    const cycle = await createCycle(name.trim());
-    await loadCycles();
-    setSelectedId(cycle.id);
+  const handleExpandMatrix = async () => {
+    if (!selectedId) return;
+    const skus = prompt("SKU через запятую:", "SKU-004,SKU-005");
+    const custs = prompt("Коды клиентов:", "CUST-AUCHAN,CUST-X5");
+    const chs = prompt("Каналы:", "modern_trade,e_com");
+    if (!skus || !custs || !chs) return;
+    const res = await expandMatrix(
+      selectedId,
+      skus.split(",").map((s) => s.trim()),
+      custs.split(",").map((s) => s.trim()),
+      chs.split(",").map((s) => s.trim())
+    );
+    setMessage(`Добавлено строк матрицы: ${res.created}`);
+    await reloadAll(selectedId);
   };
 
-  const addEmptyRow = () => {
-    if (!sourceSchema) return;
+  const addRow = () => {
+    const schema = schemas[activeTab];
+    if (!schema) return;
     const empty: Record<string, unknown> = { id: null };
-    sourceSchema.columns.forEach((c) => {
-      empty[c.key] = c.type === "number" ? 0 : "";
+    schema.columns.forEach((c) => {
+      if (c.type === "checkbox") empty[c.key] = true;
+      else if (c.type === "number") empty[c.key] = 0;
+      else if (c.key === "scope_type") empty[c.key] = "all";
+      else if (c.key === "volume_tiers")
+        empty[c.key] = '[{"min_volume":0,"discount_pct":0}]';
+      else empty[c.key] = "";
     });
-    const rows = [...(pendingRows ?? sourceSchema.rows), empty];
-    setPendingRows(rows);
-    setSourceSchema({ ...sourceSchema, rows });
+    const rows = [...(pending[activeTab] ?? schema.rows), empty];
+    setPending((p) => ({ ...p, [activeTab]: rows }));
   };
 
-  const displaySource = pendingRows
-    ? { ...sourceSchema!, rows: pendingRows }
-    : sourceSchema;
+  const tabReadOnly =
+    isReadOnly ||
+    activeTab === "dimensions" ||
+    activeTab === "snapshots" ||
+    (activeTab === "customers" && false);
+
+  const TABS: { id: TabId; label: string }[] = [
+    { id: "source", label: "Матрица цен" },
+    { id: "promos", label: "Промо-правила" },
+    { id: "customers", label: "Клиенты" },
+    { id: "channels", label: "Каналы" },
+    { id: "dimensions", label: "Измерения" },
+    { id: "snapshots", label: "Snapshots" },
+  ];
 
   return (
     <div className="app">
       <header className="header">
         <div>
-          <h1>Demo NRM</h1>
-          <p className="subtitle">Net Revenue Management — FMCG ценообразование</p>
+          <h1>Demo NRM v2</h1>
+          <p className="subtitle">
+            Effective dating · Промо stack · Tiers · Валюта · Налог · Snapshot
+          </p>
         </div>
-        <button type="button" className="btn secondary" onClick={handleNewCycle}>
-          + Новый цикл
+        <button
+          type="button"
+          className="btn secondary"
+          onClick={async () => {
+            const name = prompt("Название цикла:");
+            if (!name) return;
+            const c = await createCycle(name);
+            await loadCycles();
+            setSelectedId(c.id);
+          }}
+        >
+          + Цикл
         </button>
       </header>
 
       <section className="toolbar">
         <label>
-          Цикл NRM
+          Цикл
           <select
             value={selectedId ?? ""}
             onChange={(e) => setSelectedId(Number(e.target.value))}
           >
             {cycles.map((c) => (
               <option key={c.id} value={c.id}>
-                #{c.id} — {c.name} ({STATUS_LABELS[c.status]})
+                #{c.id} {c.name} ({STATUS_LABELS[c.status]})
               </option>
             ))}
           </select>
         </label>
-
         {selected && (
           <span className={`badge status-${selected.status}`}>
-            {STATUS_LABELS[selected.status]}
+            {STATUS_LABELS[selected.status]} · {selected.currency_code}
           </span>
         )}
       </section>
 
-      <section className="workflow">
-        {WORKFLOW.map((step, i) => {
-          const active = selected?.status === step.status;
-          const done =
-            selected &&
-            WORKFLOW.findIndex((s) => s.status === selected.status) > i;
-          return (
-            <div
-              key={step.status}
-              className={`workflow-step ${active ? "active" : ""} ${done ? "done" : ""}`}
-            >
-              <strong>{step.label}</strong>
-              <small>{step.hint}</small>
-            </div>
-          );
-        })}
+      <section className="filters-panel">
+        <h3>Параметры расчёта</h3>
+        <div className="filters-row">
+          <label>
+            Pricing date
+            <input
+              type="date"
+              value={pricingDate}
+              onChange={(e) => setPricingDate(e.target.value)}
+              disabled={isReadOnly}
+            />
+          </label>
+          <label>
+            Фильтр категория
+            <input
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              placeholder="Dairy"
+              disabled={isReadOnly}
+            />
+          </label>
+          <label>
+            Фильтр канал
+            <input
+              value={filterChannel}
+              onChange={(e) => setFilterChannel(e.target.value)}
+              placeholder="modern_trade"
+              disabled={isReadOnly}
+            />
+          </label>
+          <label>
+            Фильтр клиент
+            <input
+              value={filterCustomer}
+              onChange={(e) => setFilterCustomer(e.target.value)}
+              placeholder="CUST-X5"
+              disabled={isReadOnly}
+            />
+          </label>
+          <button
+            type="button"
+            className="btn"
+            disabled={isReadOnly || !selectedId}
+            onClick={handleSaveCycleSettings}
+          >
+            Сохранить параметры цикла
+          </button>
+        </div>
       </section>
 
       <section className="actions">
         <button
           type="button"
           className="btn"
-          disabled={loading || isReadOnly || !selectedId}
-          onClick={handleSaveSource}
+          disabled={loading || tabReadOnly || !pending[activeTab]}
+          onClick={handleSaveTab}
         >
-          Сохранить исходные данные
+          Сохранить вкладку
         </button>
         <button
           type="button"
@@ -230,13 +402,13 @@ export default function App() {
           disabled={loading || !selectedId}
           onClick={handleCalculate}
         >
-          Рассчитать измерения
+          Рассчитать
         </button>
         <button
           type="button"
           className="btn"
           disabled={loading || selected?.status !== "simulated"}
-          onClick={() => handleAdvanceStatus("approved")}
+          onClick={() => selectedId && updateCycleStatus(selectedId, "approved").then(loadCycles)}
         >
           Утвердить
         </button>
@@ -244,99 +416,96 @@ export default function App() {
           type="button"
           className="btn"
           disabled={loading || selected?.status !== "approved"}
-          onClick={() => handleAdvanceStatus("published")}
+          onClick={handlePublish}
         >
-          Опубликовать
+          Опубликовать + Snapshot
         </button>
         <button
           type="button"
           className="btn secondary"
-          disabled={loading || isReadOnly}
-          onClick={addEmptyRow}
+          disabled={loading || isReadOnly || activeTab !== "source"}
+          onClick={handleExpandMatrix}
+        >
+          Развернуть матрицу
+        </button>
+        <button
+          type="button"
+          className="btn secondary"
+          disabled={loading || tabReadOnly}
+          onClick={addRow}
         >
           + Строка
         </button>
       </section>
 
       {(message || error) && (
-        <div className={`alert ${error ? "error" : "success"}`}>
-          {error || message}
-        </div>
+        <div className={`alert ${error ? "error" : "success"}`}>{error || message}</div>
       )}
 
       {totals && (
         <section className="totals-panel">
-          <h3>Итоги цикла (waterfall)</h3>
+          <h3>Итоги</h3>
           <div className="totals-grid">
-            <div>
-              <span>Gross Revenue</span>
-              <strong>{totals.gross_revenue?.toLocaleString("ru-RU")}</strong>
-            </div>
-            <div>
-              <span>Invoice Revenue</span>
-              <strong>{totals.invoice_revenue?.toLocaleString("ru-RU")}</strong>
-            </div>
-            <div>
-              <span>Trade Spend</span>
-              <strong>{totals.trade_spend_total?.toLocaleString("ru-RU")}</strong>
-            </div>
-            <div>
-              <span>Net Revenue</span>
-              <strong>{totals.net_revenue?.toLocaleString("ru-RU")}</strong>
-            </div>
-            <div>
-              <span>COGS</span>
-              <strong>{totals.cogs?.toLocaleString("ru-RU")}</strong>
-            </div>
-            <div>
-              <span>Gross Margin</span>
-              <strong>{totals.gross_margin?.toLocaleString("ru-RU")}</strong>
-            </div>
-            <div>
-              <span>Margin %</span>
-              <strong>{totals.margin_pct} %</strong>
-            </div>
+            {Object.entries(totals).map(([k, v]) => (
+              <div key={k}>
+                <span>{k}</span>
+                <strong>{v.toLocaleString("ru-RU")}</strong>
+              </div>
+            ))}
           </div>
         </section>
       )}
 
       <nav className="tabs">
-        <button
-          type="button"
-          className={activeTab === "source" ? "active" : ""}
-          onClick={() => setActiveTab("source")}
-        >
-          Исходные данные
-        </button>
-        <button
-          type="button"
-          className={activeTab === "dimensions" ? "active" : ""}
-          onClick={() => setActiveTab("dimensions")}
-        >
-          Измерения NRM (расчёт)
-        </button>
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            className={activeTab === t.id ? "active" : ""}
+            onClick={() => setActiveTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
       </nav>
+
+      {activeTab === "snapshots" && snapshots.length > 0 && (
+        <div className="snapshot-select">
+          <label>
+            Snapshot
+            <select
+              value={selectedSnapshotId ?? ""}
+              onChange={async (e) => {
+                const id = Number(e.target.value);
+                setSelectedSnapshotId(id);
+                setSchemas((s) => ({
+                  ...s,
+                  snapshots: await fetchSnapshotGrid(id),
+                }));
+              }}
+            >
+              {snapshots.map((s) => (
+                <option key={s.id} value={s.id}>
+                  #{s.id} {new Date(s.published_at).toLocaleString("ru-RU")} — {s.pricing_date}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
 
       <main className="grid-panel">
         {loading && <div className="overlay">Загрузка…</div>}
-        {activeTab === "source" ? (
-          <ExcelGrid
-            schema={displaySource}
-            readOnly={isReadOnly}
-            onDataChange={(rows) => {
-              setPendingRows(rows);
-              setMessage(null);
-            }}
-          />
-        ) : (
-          <ExcelGrid schema={dimSchema} readOnly height={480} />
-        )}
+        <ExcelGrid
+          schema={displaySchema(activeTab)}
+          readOnly={tabReadOnly}
+          height={activeTab === "dimensions" ? 500 : 440}
+          onDataChange={(rows) => {
+            setPending((p) => ({ ...p, [activeTab]: rows }));
+            setMessage(null);
+          }}
+        />
       </main>
-
-      <footer className="footer">
-        Редактируйте ячейки как в Excel (копирование, вставка, автозаполнение).
-        Формулы: List → Invoice → Net price → Net Revenue → Margin.
-      </footer>
     </div>
   );
 }
