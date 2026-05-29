@@ -407,9 +407,15 @@ export default function App() {
           onClick={async () => {
             const name = prompt("Название цикла:");
             if (!name) return;
-            const c = await createCycle(name);
+            const copyFrom = selectedId ?? undefined;
+            const c = await createCycle(name, undefined, copyFrom);
             await loadCycles();
             setSelectedId(c.id);
+            if (copyFrom) {
+              setMessage(
+                `Цикл «${name}» создан: скопированы данные из #${copyFrom} (матрица, tiers, промо).`
+              );
+            }
           }}
         >
           + Цикл

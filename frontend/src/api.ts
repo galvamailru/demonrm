@@ -86,8 +86,16 @@ export async function fetchCycles(): Promise<Cycle[]> {
   return data;
 }
 
-export async function createCycle(name: string, description?: string): Promise<Cycle> {
-  const { data } = await api.post<Cycle>("/api/cycles", { name, description });
+export async function createCycle(
+  name: string,
+  description?: string,
+  copyFromCycleId?: number
+): Promise<Cycle> {
+  const { data } = await api.post<Cycle>("/api/cycles", {
+    name,
+    description,
+    copy_from_cycle_id: copyFromCycleId ?? null,
+  });
   return data;
 }
 

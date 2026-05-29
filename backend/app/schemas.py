@@ -11,6 +11,10 @@ class CycleCreate(BaseModel):
     description: str | None = None
     pricing_date: date | None = None
     currency_code: str = "RUB"
+    copy_from_cycle_id: int | None = Field(
+        default=None,
+        description="Скопировать матрицу, tiers, промо и параметры расчёта из этого цикла",
+    )
 
 
 class CycleUpdate(BaseModel):

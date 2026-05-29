@@ -7,6 +7,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
+from app.cycle_clone import apply_cycle_settings, copy_cycle_data
 from app.calculation_service import (
     build_filters,
     run_calculation,
@@ -243,13 +244,29 @@ def list_cycles(db: Session = Depends(get_db)) -> list[NrmCycle]:
 
 @app.post("/api/cycles", response_model=CycleOut, status_code=201)
 def create_cycle(payload: CycleCreate, db: Session = Depends(get_db)) -> NrmCycle:
+    source: NrmCycle | None = None
+    if payload.copy_from_cycle_id is not None:
+        source = _require_cycle(db, payload.copy_from_cycle_id)
+
     cycle = NrmCycle(
         name=payload.name,
         description=payload.description,
         pricing_date=payload.pricing_date or date.today(),
         currency_code=payload.currency_code,
     )
+    if source:
+        apply_cycle_settings(source, cycle)
+        if payload.pricing_date is not None:
+            cycle.pricing_date = payload.pricing_date
+        if payload.currency_code != "RUB":
+            cycle.currency_code = payload.currency_code
+
     db.add(cycle)
+    db.flush()
+
+    if source:
+        copy_cycle_data(db, source.id, cycle.id)
+
     db.commit()
     db.refresh(cycle)
     return cycle
