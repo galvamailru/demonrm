@@ -50,6 +50,18 @@ export interface CalculateResponse {
   totals: Record<string, number>;
 }
 
+export interface CycleCompareResult {
+  base_cycle_id: number;
+  compare_cycle_id: number;
+  base_cycle_name: string;
+  compare_cycle_name: string;
+  pricing_date: string;
+  filters: Record<string, string | null>;
+  rows: Record<string, unknown>[];
+  totals: Record<string, number>;
+  grid: GridSchema;
+}
+
 export interface Snapshot {
   id: number;
   cycle_id: number;
@@ -262,5 +274,20 @@ export async function fetchSnapshots(cycleId: number): Promise<Snapshot[]> {
 
 export async function fetchSnapshotGrid(snapshotId: number): Promise<GridSchema> {
   const { data } = await api.get<GridSchema>(`/api/snapshots/${snapshotId}/grid`);
+  return data;
+}
+
+export async function compareCycles(
+  baseCycleId: number,
+  compareCycleId: number,
+  filters?: CalcFilters
+): Promise<CycleCompareResult> {
+  const { data } = await api.get<CycleCompareResult>("/api/cycles/compare", {
+    params: {
+      base_cycle_id: baseCycleId,
+      compare_cycle_id: compareCycleId,
+      ...filterParams(filters),
+    },
+  });
   return data;
 }

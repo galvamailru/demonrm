@@ -211,3 +211,15 @@ class GridColumn(BaseModel):
 class GridSchema(BaseModel):
     columns: list[GridColumn]
     rows: list[dict[str, Any]]
+
+
+class CycleCompareResponse(BaseModel):
+    base_cycle_id: int
+    compare_cycle_id: int
+    base_cycle_name: str
+    compare_cycle_name: str
+    pricing_date: date
+    filters: dict[str, str | None]
+    rows: list[dict[str, Any]]
+    totals: dict[str, float]
+    grid: GridSchema

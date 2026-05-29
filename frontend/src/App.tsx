@@ -6,7 +6,9 @@ import {
   CycleStatus,
   Snapshot,
   calculateDimensions,
+  compareCycles,
   createCycle,
+  type CycleCompareResult,
   expandMatrix,
   fetchChannelsGrid,
   fetchCustomersGrid,
@@ -28,6 +30,8 @@ import {
   type GridSchema,
 } from "./api";
 import ExcelGrid from "./ExcelGrid";
+import MethodologyPanel from "./MethodologyPanel";
+import type { HelpPageId } from "./methodology";
 
 type TabId =
   | "source"
@@ -35,7 +39,8 @@ type TabId =
   | "customers"
   | "channels"
   | "dimensions"
-  | "snapshots";
+  | "snapshots"
+  | "compare";
 
 type GridKey = TabId | "tiers";
 
@@ -67,6 +72,9 @@ export default function App() {
   const [filterCategory, setFilterCategory] = useState("");
   const [filterChannel, setFilterChannel] = useState("");
   const [filterCustomer, setFilterCustomer] = useState("");
+  const [compareBaseId, setCompareBaseId] = useState<number | null>(null);
+  const [compareOtherId, setCompareOtherId] = useState<number | null>(null);
+  const [compareResult, setCompareResult] = useState<CycleCompareResult | null>(null);
 
   const selected = cycles.find((c) => c.id === selectedId) ?? null;
   const isReadOnly = selected?.status === "published";
@@ -159,6 +167,15 @@ export default function App() {
   useEffect(() => {
     loadCycles().catch((e) => setError(String(e)));
   }, [loadCycles]);
+
+  useEffect(() => {
+    if (!selectedId || cycles.length < 2) return;
+    setCompareBaseId((prev) => prev ?? selectedId);
+    if (!compareOtherId) {
+      const other = cycles.find((c) => c.id !== selectedId);
+      if (other) setCompareOtherId(other.id);
+    }
+  }, [selectedId, cycles, compareOtherId]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -323,7 +340,7 @@ export default function App() {
   const addTierRow = () => {
     const sid = selectedSourceRow?.id ? Number(selectedSourceRow.id) : 0;
     if (!sid) {
-      setError("Сначала выберите строку в матрице цен (слева)");
+      setError("Сначала выберите строку в матрице цен (в таблице выше)");
       return;
     }
     setError(null);
@@ -346,12 +363,32 @@ export default function App() {
     activeTab === "snapshots" ||
     (activeTab === "customers" && false);
 
+  const handleCompareCycles = async () => {
+    if (!compareBaseId || !compareOtherId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await compareCycles(compareBaseId, compareOtherId, calcFilters);
+      setCompareResult(result);
+      setMessage(`Сравнение: ${result.base_cycle_name} vs ${result.compare_cycle_name}`);
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } };
+      setError(err.response?.data?.detail || "Ошибка сравнения");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const helpPage: HelpPageId =
+    activeTab === "compare" ? "compare" : (activeTab as HelpPageId);
+
   const TABS: { id: TabId; label: string }[] = [
     { id: "source", label: "Матрица цен" },
     { id: "promos", label: "Промо-правила" },
     { id: "customers", label: "Клиенты" },
     { id: "channels", label: "Каналы" },
     { id: "dimensions", label: "Измерения" },
+    { id: "compare", label: "Сравнение циклов" },
     { id: "snapshots", label: "Snapshots" },
   ];
 
@@ -399,6 +436,8 @@ export default function App() {
           </span>
         )}
       </section>
+
+      <MethodologyPanel page={helpPage} />
 
       <section className="filters-panel">
         <h3>Параметры расчёта</h3>
@@ -451,69 +490,89 @@ export default function App() {
       </section>
 
       <section className="actions">
-        <button
-          type="button"
-          className="btn"
-          disabled={
-            loading ||
-            tabReadOnly ||
-            (activeTab === "source"
-              ? !pending.source && !pending.tiers
-              : !pending[activeTab])
-          }
-          onClick={handleSaveTab}
-        >
-          Сохранить вкладку
-        </button>
-        <button
-          type="button"
-          className="btn primary"
-          disabled={loading || !selectedId}
-          onClick={handleCalculate}
-        >
-          Рассчитать
-        </button>
-        <button
-          type="button"
-          className="btn"
-          disabled={loading || selected?.status !== "simulated"}
-          onClick={() => selectedId && updateCycleStatus(selectedId, "approved").then(loadCycles)}
-        >
-          Утвердить
-        </button>
-        <button
-          type="button"
-          className="btn"
-          disabled={loading || !selectedId || selected?.status === "published"}
-          onClick={handlePublish}
-          title="Расчёт, snapshot и статус Published (из черновика, симуляции или утверждённого)"
-        >
-          Опубликовать + Snapshot
-        </button>
-        <button
-          type="button"
-          className="btn secondary"
-          disabled={loading || isReadOnly || activeTab !== "source"}
-          onClick={handleExpandMatrix}
-        >
-          Развернуть матрицу
-        </button>
-        <button
-          type="button"
-          className="btn secondary"
-          disabled={loading || tabReadOnly}
-          onClick={activeTab === "source" ? addRow : addRow}
-        >
-          + Строка {activeTab === "source" ? "матрицы" : ""}
-        </button>
-        {activeTab === "source" && (
+        {activeTab !== "compare" && (
           <button
             type="button"
-            className="btn secondary"
-            disabled={loading || isReadOnly}
-            onClick={addTierRow}
+            className="btn"
+            disabled={
+              loading ||
+              tabReadOnly ||
+              (activeTab === "source"
+                ? !pending.source && !pending.tiers
+                : !pending[activeTab])
+            }
+            onClick={handleSaveTab}
           >
-            + Ступень tier
+            Сохранить вкладку
+          </button>
+        )}
+        {activeTab !== "compare" && (
+          <button
+            type="button"
+            className="btn primary"
+            disabled={loading || !selectedId}
+            onClick={handleCalculate}
+          >
+            Рассчитать
+          </button>
+        )}
+        {activeTab !== "compare" && (
+          <>
+            <button
+              type="button"
+              className="btn"
+              disabled={loading || selected?.status !== "simulated"}
+              onClick={() =>
+                selectedId && updateCycleStatus(selectedId, "approved").then(loadCycles)
+              }
+            >
+              Утвердить
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={loading || !selectedId || selected?.status === "published"}
+              onClick={handlePublish}
+              title="Расчёт, snapshot и статус Published"
+            >
+              Опубликовать + Snapshot
+            </button>
+            <button
+              type="button"
+              className="btn secondary"
+              disabled={loading || isReadOnly || activeTab !== "source"}
+              onClick={handleExpandMatrix}
+            >
+              Развернуть матрицу
+            </button>
+            <button
+              type="button"
+              className="btn secondary"
+              disabled={loading || tabReadOnly}
+              onClick={addRow}
+            >
+              + Строка {activeTab === "source" ? "матрицы" : ""}
+            </button>
+            {activeTab === "source" && (
+              <button
+                type="button"
+                className="btn secondary"
+                disabled={loading || isReadOnly}
+                onClick={addTierRow}
+              >
+                + Ступень tier
+              </button>
+            )}
+          </>
+        )}
+        {activeTab === "compare" && (
+          <button
+            type="button"
+            className="btn primary"
+            disabled={loading || !compareBaseId || !compareOtherId}
+            onClick={handleCompareCycles}
+          >
+            Сравнить циклы
           </button>
         )}
       </section>
@@ -549,6 +608,64 @@ export default function App() {
         ))}
       </nav>
 
+      {activeTab === "compare" && (
+        <section className="compare-toolbar">
+          <label>
+            Цикл A (база)
+            <select
+              value={compareBaseId ?? ""}
+              onChange={(e) => setCompareBaseId(Number(e.target.value))}
+            >
+              {cycles.map((c) => (
+                <option key={c.id} value={c.id}>
+                  #{c.id} {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Цикл B (сравнение)
+            <select
+              value={compareOtherId ?? ""}
+              onChange={(e) => setCompareOtherId(Number(e.target.value))}
+            >
+              {cycles.map((c) => (
+                <option key={c.id} value={c.id}>
+                  #{c.id} {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </section>
+      )}
+
+      {activeTab === "compare" && compareResult && (
+        <section className="totals-panel">
+          <h3>Итоги сравнения</h3>
+          <div className="compare-summary">
+            <div>
+              <span>Net Revenue A</span>
+              <strong>{compareResult.totals.net_revenue_base?.toLocaleString("ru-RU")}</strong>
+            </div>
+            <div>
+              <span>Net Revenue B</span>
+              <strong>
+                {compareResult.totals.net_revenue_compare?.toLocaleString("ru-RU")}
+              </strong>
+            </div>
+            <div>
+              <span>Δ Net Revenue</span>
+              <strong>{compareResult.totals.net_revenue_delta?.toLocaleString("ru-RU")}</strong>
+              <span> ({compareResult.totals.net_revenue_delta_pct} %)</span>
+            </div>
+            <div>
+              <span>Δ Gross Margin</span>
+              <strong>{compareResult.totals.gross_margin_delta?.toLocaleString("ru-RU")}</strong>
+            </div>
+          </div>
+        </section>
+      )}
+
       {activeTab === "snapshots" && snapshots.length > 0 && (
         <div className="snapshot-select">
           <label>
@@ -572,7 +689,9 @@ export default function App() {
         </div>
       )}
 
-      <main className={`grid-panel ${activeTab === "source" ? "grid-panel-split" : ""}`}>
+      <main
+        className={`grid-panel ${activeTab === "source" || activeTab === "compare" ? "grid-panel-split" : ""}`}
+      >
         {loading && <div className="overlay">Загрузка…</div>}
         {activeTab === "source" ? (
           <div className="split-grids">
@@ -581,7 +700,7 @@ export default function App() {
               <ExcelGrid
                 schema={displaySchema("source")}
                 readOnly={isReadOnly}
-                height={460}
+                height={380}
                 onRowSelect={(row) => setSelectedSourceRow(row)}
                 onDataChange={(rows) => {
                   setPending((p) => ({ ...p, source: rows }));
@@ -591,7 +710,7 @@ export default function App() {
             </div>
             <div className="split-pane">
               <div className="pane-title-row">
-                <h3 className="pane-title">Volume tiers</h3>
+                <h3 className="pane-title">Volume tiers (под матрицей)</h3>
                 <label className="tier-filter">
                   <input
                     type="checkbox"
@@ -604,14 +723,14 @@ export default function App() {
                       ID {String(selectedSourceRow.id)} · {String(selectedSourceRow.sku)}
                     </span>
                   ) : (
-                    <span className="tier-hint">— выберите строку слева</span>
+                    <span className="tier-hint">— выберите строку в таблице выше</span>
                   )}
                 </label>
               </div>
               <ExcelGrid
                 schema={displayTiersSchema()}
                 readOnly={isReadOnly}
-                height={460}
+                height={280}
                 onDataChange={(rows) => {
                   if (filterTiersBySelection && selectedSourceRow?.id) {
                     const sid = Number(selectedSourceRow.id);
@@ -627,6 +746,8 @@ export default function App() {
               />
             </div>
           </div>
+        ) : activeTab === "compare" ? (
+          <ExcelGrid schema={compareResult?.grid ?? null} readOnly height={520} />
         ) : (
           <ExcelGrid
             schema={displaySchema(activeTab)}

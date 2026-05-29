@@ -12,6 +12,7 @@ from app.calculation_service import (
     run_calculation,
     save_publish_snapshot,
 )
+from app.compare import compare_dimensions
 from app.config import settings
 from app.database import Base, engine, get_db
 from app.models import (
@@ -45,6 +46,7 @@ from app.schemas import (
     SourceRowOut,
     TierBulkUpdate,
     TierRowIn,
+    CycleCompareResponse,
 )
 from app.seed import seed_demo_data
 
@@ -121,6 +123,23 @@ CHANNEL_COLUMNS = [
     ("active", "Активен", 80),
 ]
 
+COMPARE_COLUMNS = [
+    ("sku", "SKU", 90),
+    ("customer_code", "Клиент", 100),
+    ("channel", "Канал", 90),
+    ("product_name", "Товар", 130),
+    ("net_revenue_base", "Net Rev (A)", 110),
+    ("net_revenue_compare", "Net Rev (B)", 110),
+    ("net_revenue_delta", "Δ Net Rev", 100),
+    ("net_revenue_delta_pct", "Δ Net %", 80),
+    ("gross_margin_base", "Margin (A)", 100),
+    ("gross_margin_compare", "Margin (B)", 100),
+    ("gross_margin_delta", "Δ Margin", 100),
+    ("margin_pct_base", "Margin % (A)", 90),
+    ("margin_pct_compare", "Margin % (B)", 90),
+    ("margin_pct_delta", "Δ Margin п.п.", 100),
+]
+
 DIMENSION_COLUMNS = [
     ("sku", "SKU", 90),
     ("customer_code", "Клиент", 100),
@@ -172,6 +191,16 @@ NUMBER_KEYS = {
     "net_revenue_after_tax",
     "volume_in_units",
     "list_price_base_currency",
+    "net_revenue_base",
+    "net_revenue_compare",
+    "net_revenue_delta",
+    "net_revenue_delta_pct",
+    "gross_margin_base",
+    "gross_margin_compare",
+    "gross_margin_delta",
+    "margin_pct_base",
+    "margin_pct_compare",
+    "margin_pct_delta",
 }
 
 
@@ -598,6 +627,51 @@ def calculate(
         },
         rows=[DimensionRowOut.model_validate(d.__dict__) for d in dimensions],
         totals=totals,
+    )
+
+
+@app.get("/api/cycles/compare", response_model=CycleCompareResponse)
+def compare_cycles(
+    base_cycle_id: int = Query(...),
+    compare_cycle_id: int = Query(...),
+    db: Session = Depends(get_db),
+    category: str | None = Query(None),
+    channel: str | None = Query(None),
+    customer_code: str | None = Query(None),
+    pricing_date: date | None = Query(None),
+) -> CycleCompareResponse:
+    base_cycle = _require_cycle(db, base_cycle_id)
+    compare_cycle = _require_cycle(db, compare_cycle_id)
+    if base_cycle_id == compare_cycle_id:
+        raise HTTPException(400, "Choose two different cycles")
+
+    filters = build_filters(base_cycle, category, channel, customer_code)
+    pdate = pricing_date or base_cycle.pricing_date
+
+    base_dims, _, _, _ = run_calculation(db, base_cycle, filters, pdate)
+    cmp_dims, _, _, _ = run_calculation(db, compare_cycle, filters, pdate)
+
+    if not base_dims and not cmp_dims:
+        raise HTTPException(400, "No data to compare for selected filters/date")
+
+    rows, totals = compare_dimensions(base_dims, cmp_dims)
+    row_dicts = [r.__dict__ for r in rows]
+    grid = _to_grid(COMPARE_COLUMNS, row_dicts, editable=False)
+
+    return CycleCompareResponse(
+        base_cycle_id=base_cycle_id,
+        compare_cycle_id=compare_cycle_id,
+        base_cycle_name=base_cycle.name,
+        compare_cycle_name=compare_cycle.name,
+        pricing_date=pdate,
+        filters={
+            "category": filters.category,
+            "channel": filters.channel,
+            "customer_code": filters.customer_code,
+        },
+        rows=row_dicts,
+        totals=totals,
+        grid=grid,
     )
 
 

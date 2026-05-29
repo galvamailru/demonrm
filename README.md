@@ -8,7 +8,9 @@
 |---------|----------|
 | **Effective dating** | `valid_from` / `valid_to` на строках и промо; `pricing_date` на цикле |
 | **Промо-правила** | Приоритет, stackable / non-stackable, scope (all/sku/category/channel/customer) |
-| **Tier-скидки** | Отдельная таблица **Volume tiers** рядом с матрицей цен (связь по `ID строки`) |
+| **Tier-скидки** | Таблица **Volume tiers** под матрицей цен (связь по `ID строки`) |
+| **Сравнение циклов** | Вкладка с дельтами Net Revenue и маржи между двумя сценариями |
+| **Методика** | На каждой вкладке — инструкция, что делать пользователю |
 | **Валюта** | `currency_code` + `exchange_rate` → пересчёт в валюту цикла |
 | **UoM** | Единица (`EA`, `CS`) и `units_per_uom`; объём в базовых единицах для tiers |
 | **Налог** | `tax_rate_pct` → `tax_amount`, `net_revenue_after_tax` |
