@@ -20,6 +20,7 @@ import {
   saveCustomersGrid,
   savePromosGrid,
   saveSourceGrid,
+  publishCycle,
   updateCycle,
   updateCycleStatus,
   type GridSchema,
@@ -239,9 +240,10 @@ export default function App() {
   const handlePublish = async () => {
     if (!selectedId) return;
     setLoading(true);
+    setError(null);
     try {
       if (pending.source) await saveSourceGrid(selectedId, pending.source);
-      await updateCycleStatus(selectedId, "published");
+      await publishCycle(selectedId);
       setMessage("Опубликовано. Snapshot расчёта сохранён.");
       await loadCycles();
       await reloadAll(selectedId);
@@ -423,8 +425,9 @@ export default function App() {
         <button
           type="button"
           className="btn"
-          disabled={loading || selected?.status !== "approved"}
+          disabled={loading || !selectedId || selected?.status === "published"}
           onClick={handlePublish}
+          title="Расчёт, snapshot и статус Published (из черновика, симуляции или утверждённого)"
         >
           Опубликовать + Snapshot
         </button>

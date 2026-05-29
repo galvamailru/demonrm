@@ -102,6 +102,12 @@ export async function updateCycleStatus(
   return data;
 }
 
+/** Публикация + snapshot (из draft / simulated / approved) */
+export async function publishCycle(cycleId: number): Promise<Cycle> {
+  const { data } = await api.post<Cycle>(`/api/cycles/${cycleId}/publish`);
+  return data;
+}
+
 export async function fetchSourceGrid(cycleId: number): Promise<GridSchema> {
   const { data } = await api.get<GridSchema>(`/api/cycles/${cycleId}/source/grid`);
   return data;

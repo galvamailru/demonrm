@@ -259,6 +259,29 @@ def update_cycle_status(
     return cycle
 
 
+@app.post("/api/cycles/{cycle_id}/publish", response_model=CycleOut)
+def publish_cycle(cycle_id: int, db: Session = Depends(get_db)) -> NrmCycle:
+    """Публикация с snapshot: допустимо из draft, simulated или approved."""
+    cycle = _require_cycle(db, cycle_id)
+    if cycle.status == CycleStatus.PUBLISHED:
+        raise HTTPException(400, "Cycle is already published")
+
+    filters = build_filters(cycle)
+    dimensions, totals, pdate, filters = run_calculation(db, cycle, filters)
+    if not dimensions:
+        raise HTTPException(
+            400,
+            "No rows match filters/pricing date for snapshot. "
+            "Check pricing_date, filters and valid_from/valid_to on rows.",
+        )
+
+    save_publish_snapshot(db, cycle, dimensions, totals, pdate, filters)
+    cycle.status = CycleStatus.PUBLISHED
+    db.commit()
+    db.refresh(cycle)
+    return cycle
+
+
 # --- Source data ---
 
 
