@@ -102,9 +102,29 @@ class SourceDataRow(Base):
     trade_spend_per_unit: Mapped[float] = mapped_column(Float, default=0.0)
     unit_cost: Mapped[float] = mapped_column(Float, default=0.0)
     planned_volume: Mapped[float] = mapped_column(Float, default=0.0)
-    volume_tiers: Mapped[list | None] = mapped_column(JSON, default=list)
 
     cycle: Mapped["NrmCycle"] = relationship(back_populates="source_rows")
+    volume_tier_rows: Mapped[list["VolumeTier"]] = relationship(
+        back_populates="source_row",
+        cascade="all, delete-orphan",
+        order_by="VolumeTier.tier_order",
+    )
+
+
+class VolumeTier(Base):
+    """Ступени скидки по объёму, связанные со строкой матрицы цен."""
+
+    __tablename__ = "volume_tiers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_row_id: Mapped[int] = mapped_column(
+        ForeignKey("source_data_rows.id", ondelete="CASCADE"), index=True
+    )
+    tier_order: Mapped[int] = mapped_column(Integer, default=0)
+    min_volume: Mapped[float] = mapped_column(Float, default=0.0)
+    discount_pct: Mapped[float] = mapped_column(Float, default=0.0)
+
+    source_row: Mapped["SourceDataRow"] = relationship(back_populates="volume_tier_rows")
 
 
 class PromoRule(Base):

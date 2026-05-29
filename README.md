@@ -8,7 +8,7 @@
 |---------|----------|
 | **Effective dating** | `valid_from` / `valid_to` на строках и промо; `pricing_date` на цикле |
 | **Промо-правила** | Приоритет, stackable / non-stackable, scope (all/sku/category/channel/customer) |
-| **Tier-скидки** | JSON в колонке `volume_tiers`: `[{"min_volume":10000,"discount_pct":2}]` |
+| **Tier-скидки** | Отдельная таблица **Volume tiers** рядом с матрицей цен (связь по `ID строки`) |
 | **Валюта** | `currency_code` + `exchange_rate` → пересчёт в валюту цикла |
 | **UoM** | Единица (`EA`, `CS`) и `units_per_uom`; объём в базовых единицах для tiers |
 | **Налог** | `tax_rate_pct` → `tax_amount`, `net_revenue_after_tax` |
@@ -18,6 +18,8 @@
 
 ## Запуск
 
+### Docker (если доступен Docker Hub)
+
 ```bash
 cd demonrm
 docker compose down -v   # при обновлении с v1 — пересоздать БД
@@ -25,6 +27,15 @@ docker compose up --build
 ```
 
 - UI: http://localhost:8080  
+- API: http://localhost:8000/docs  
+
+**Ошибка `network is unreachable` при pull образов?** → см. [DOCKER-NETWORK.md](DOCKER-NETWORK.md) или:
+
+```powershell
+.\scripts\start-local.ps1
+```
+
+- UI: http://localhost:5173  
 - API: http://localhost:8000/docs  
 
 ## Порядок работы

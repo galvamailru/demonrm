@@ -246,6 +246,63 @@ body {
   min-height: 460px;
 }
 
+.grid-panel-split {
+  padding: 0.75rem;
+}
+
+.split-grids {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .split-grids {
+    grid-template-columns: 1fr;
+  }
+}
+
+.split-pane {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem;
+  background: #fafbfc;
+}
+
+.pane-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.pane-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.pane-title-row .pane-title {
+  margin: 0;
+}
+
+.tier-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.tier-hint {
+  color: var(--primary);
+  font-weight: 500;
+}
+
 .excel-grid-wrap {
   overflow: auto;
 }

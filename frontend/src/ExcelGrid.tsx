@@ -9,6 +9,7 @@ interface ExcelGridProps {
   schema: GridSchema | null;
   readOnly?: boolean;
   onDataChange?: (rows: Record<string, unknown>[]) => void;
+  onRowSelect?: (row: Record<string, unknown> | null) => void;
   height?: number;
 }
 
@@ -64,6 +65,7 @@ export default function ExcelGrid({
   schema,
   readOnly = false,
   onDataChange,
+  onRowSelect,
   height = 420,
 }: ExcelGridProps) {
   const hotRef = useRef<HotTableClass>(null);
@@ -102,6 +104,17 @@ export default function ExcelGrid({
     onDataChange(matrixToRows(parsed.columns, hot.getData() as unknown[][]));
   }, [parsed, onDataChange, readOnly]);
 
+  const emitRowSelect = useCallback(
+    (rowIndex: number) => {
+      if (!parsed || !onRowSelect || rowIndex < 0) return;
+      const hot = hotRef.current?.hotInstance;
+      if (!hot) return;
+      const rows = matrixToRows(parsed.columns, hot.getData() as unknown[][]);
+      onRowSelect(rows[rowIndex] ?? null);
+    },
+    [parsed, onRowSelect]
+  );
+
   useEffect(() => {
     if (!parsed || readOnly) return;
     const hot = hotRef.current?.hotInstance;
@@ -133,6 +146,7 @@ export default function ExcelGrid({
         columnSorting={true}
         readOnly={readOnly}
         afterChange={afterChange}
+        afterSelectionEnd={(row) => emitRowSelect(row)}
         className="htCustom"
       />
     </div>

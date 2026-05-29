@@ -70,7 +70,6 @@ class SourceRowIn(BaseModel):
     trade_spend_per_unit: float = 0.0
     unit_cost: float = 0.0
     planned_volume: float = 0.0
-    volume_tiers: list[VolumeTier] = Field(default_factory=list)
 
 
 class SourceRowOut(SourceRowIn):
@@ -82,6 +81,27 @@ class SourceRowOut(SourceRowIn):
 
 class SourceBulkUpdate(BaseModel):
     rows: list[SourceRowIn]
+
+
+class TierRowIn(BaseModel):
+    id: int | None = None
+    source_row_id: int
+    tier_order: int = 0
+    min_volume: float = 0.0
+    discount_pct: float = 0.0
+
+
+class TierRowOut(TierRowIn):
+    id: int
+    sku: str = ""
+    product_name: str = ""
+    customer_code: str = ""
+
+    model_config = {"from_attributes": True}
+
+
+class TierBulkUpdate(BaseModel):
+    rows: list[TierRowIn]
 
 
 class PromoRuleIn(BaseModel):

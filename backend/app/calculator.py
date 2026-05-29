@@ -4,6 +4,7 @@ from datetime import date
 
 from app.models import PromoRule, SourceDataRow
 from app.promo_engine import AppliedPromo, resolve_promo_discounts
+from app.tier_utils import tiers_for_row
 
 
 @dataclass
@@ -95,7 +96,7 @@ def calculate_row(
     units_per = float(row.units_per_uom or 1.0) or 1.0
     volume_in_units = volume_uom * units_per
 
-    tier_disc = _volume_tier_discount(volume_in_units, row.volume_tiers)
+    tier_disc = _volume_tier_discount(volume_in_units, tiers_for_row(row))
     promo_total_pct, applied_list = resolve_promo_discounts(row, promo_rules, pricing_date)
     promo = _pct(promo_total_pct)
     tier = _pct(tier_disc)

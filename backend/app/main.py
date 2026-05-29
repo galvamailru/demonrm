@@ -23,6 +23,7 @@ from app.models import (
     PromoRule,
     PromoScopeType,
     SourceDataRow,
+    VolumeTier,
 )
 from app.schemas import (
     CalculateResponse,
@@ -42,6 +43,8 @@ from app.schemas import (
     SourceBulkUpdate,
     SourceRowIn,
     SourceRowOut,
+    TierBulkUpdate,
+    TierRowIn,
 )
 from app.seed import seed_demo_data
 
@@ -83,7 +86,15 @@ SOURCE_COLUMNS = [
     ("trade_spend_per_unit", "Trade/ед", 90),
     ("unit_cost", "Себест.", 80),
     ("planned_volume", "Объём (UoM)", 100),
-    ("volume_tiers", "Tier JSON", 180),
+]
+
+TIER_COLUMNS = [
+    ("source_row_id", "ID строки", 90, True),
+    ("sku", "SKU", 90, False),
+    ("product_name", "Товар", 130, False),
+    ("customer_code", "Клиент", 100, False),
+    ("min_volume", "Мин. объём (ед)", 120, True),
+    ("discount_pct", "Скидка %", 100, True),
 ]
 
 PROMO_COLUMNS = [
@@ -296,24 +307,9 @@ def list_source_rows(cycle_id: int, db: Session = Depends(get_db)) -> list[Sourc
     )
 
 
-def _parse_volume_tiers(raw: Any) -> list:
-    if raw is None or raw == "":
-        return []
-    if isinstance(raw, list):
-        return raw
-    if isinstance(raw, str):
-        try:
-            parsed = json.loads(raw)
-            return parsed if isinstance(parsed, list) else []
-        except json.JSONDecodeError:
-            return []
-    return []
-
-
 def _source_row_dict(row_in: SourceRowIn, order: int) -> dict:
     data = row_in.model_dump(exclude={"id"})
     data["row_order"] = order
-    data["volume_tiers"] = _parse_volume_tiers(data.get("volume_tiers"))
     return data
 
 
@@ -355,6 +351,84 @@ def bulk_update_source(
 def source_grid(cycle_id: int, db: Session = Depends(get_db)) -> GridSchema:
     rows = list_source_rows(cycle_id, db)
     return _to_grid(SOURCE_COLUMNS, rows, editable=True)
+
+
+def _tier_grid_objects(cycle_id: int, db: Session) -> list[dict[str, Any]]:
+    pairs = (
+        db.query(VolumeTier, SourceDataRow)
+        .join(SourceDataRow, VolumeTier.source_row_id == SourceDataRow.id)
+        .filter(SourceDataRow.cycle_id == cycle_id)
+        .order_by(SourceDataRow.row_order, VolumeTier.tier_order, VolumeTier.id)
+        .all()
+    )
+    result: list[dict[str, Any]] = []
+    for tier, src in pairs:
+        result.append(
+            {
+                "id": tier.id,
+                "source_row_id": tier.source_row_id,
+                "sku": src.sku,
+                "product_name": src.product_name,
+                "customer_code": src.customer_code or "",
+                "min_volume": tier.min_volume,
+                "discount_pct": tier.discount_pct,
+            }
+        )
+    return result
+
+
+@app.get("/api/cycles/{cycle_id}/tiers/grid", response_model=GridSchema)
+def tiers_grid(cycle_id: int, db: Session = Depends(get_db)) -> GridSchema:
+    _require_cycle(db, cycle_id)
+    return _to_grid(TIER_COLUMNS, _tier_grid_objects(cycle_id, db), editable=True)
+
+
+@app.put("/api/cycles/{cycle_id}/tiers")
+def bulk_update_tiers(
+    cycle_id: int, payload: TierBulkUpdate, db: Session = Depends(get_db)
+):
+    cycle = _require_cycle(db, cycle_id)
+    if cycle.status == CycleStatus.PUBLISHED:
+        raise HTTPException(400, "Published cycle is read-only")
+
+    valid_source_ids = {
+        r.id
+        for r in db.query(SourceDataRow).filter(SourceDataRow.cycle_id == cycle_id).all()
+    }
+    existing = {
+        t.id: t
+        for t in db.query(VolumeTier)
+        .join(SourceDataRow)
+        .filter(SourceDataRow.cycle_id == cycle_id)
+        .all()
+    }
+    kept: set[int] = set()
+
+    for row_in in payload.rows:
+        if row_in.source_row_id not in valid_source_ids:
+            raise HTTPException(400, f"Invalid source_row_id {row_in.source_row_id}")
+        data = {
+            "source_row_id": row_in.source_row_id,
+            "tier_order": row_in.tier_order,
+            "min_volume": float(row_in.min_volume or 0),
+            "discount_pct": float(row_in.discount_pct or 0),
+        }
+        if row_in.id and row_in.id in existing:
+            obj = existing[row_in.id]
+            for k, v in data.items():
+                setattr(obj, k, v)
+            kept.add(row_in.id)
+        else:
+            db.add(VolumeTier(**data))
+
+    for tid, obj in existing.items():
+        if tid not in kept:
+            db.delete(obj)
+
+    if cycle.status != CycleStatus.DRAFT:
+        cycle.status = CycleStatus.DRAFT
+    db.commit()
+    return {"ok": True, "rows": len(payload.rows)}
 
 
 # --- Promo rules ---
@@ -470,7 +544,6 @@ def expand_matrix(
                 data["customer_code"] = cust
                 data["channel"] = ch
                 data["product_name"] = data.get("product_name") or sku
-                data["volume_tiers"] = _parse_volume_tiers(data.get("volume_tiers"))
                 allowed = {c.name for c in SourceDataRow.__table__.columns} - {"id", "cycle_id"}
                 db.add(
                     SourceDataRow(
@@ -615,22 +688,27 @@ def _bulk_master(model, payload: list[MatrixMasterRow], db: Session, extra_field
 
 
 def _to_grid(
-    columns_spec: list[tuple[str, str, int]],
+    columns_spec: list[tuple],
     rows: list[Any],
     editable: bool,
 ) -> GridSchema:
     from app.schemas import GridColumn
 
-    columns = [
-        GridColumn(
-            key=k,
-            title=t,
-            width=w,
-            editable=editable and k not in ("id",),
-            type=_col_type(k),
+    columns = []
+    col_keys: list[str] = []
+    for spec in columns_spec:
+        k, t, w = spec[0], spec[1], spec[2]
+        col_editable = spec[3] if len(spec) > 3 else editable
+        col_keys.append(k)
+        columns.append(
+            GridColumn(
+                key=k,
+                title=t,
+                width=w,
+                editable=col_editable and k not in ("id",),
+                type=_col_type(k),
+            )
         )
-        for k, t, w in columns_spec
-    ]
     grid_rows: list[dict[str, Any]] = []
     for row in rows:
         if isinstance(row, dict):
@@ -639,11 +717,9 @@ def _to_grid(
         else:
             item = {"id": getattr(row, "id", None) or getattr(row, "source_id", None)}
             source = row
-        for key, _, _ in columns_spec:
+        for key in col_keys:
             val = source[key] if isinstance(source, dict) else getattr(source, key, None)
-            if key == "volume_tiers" and val is not None:
-                item[key] = json.dumps(val, ensure_ascii=False) if not isinstance(val, str) else val
-            elif key == "stackable":
+            if key == "stackable":
                 item[key] = bool(val) if val is not None else False
             elif key in ("valid_from", "valid_to") and val is not None:
                 item[key] = str(val)

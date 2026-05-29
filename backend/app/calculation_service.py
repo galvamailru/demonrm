@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.calculator import CalculationFilters, calculate_totals, filter_and_calculate
 from app.models import CalculationSnapshot, CycleStatus, NrmCycle, PromoRule, SourceDataRow
@@ -28,6 +28,7 @@ def run_calculation(
     pdate = pricing_date or cycle.pricing_date
     source = (
         db.query(SourceDataRow)
+        .options(joinedload(SourceDataRow.volume_tier_rows))
         .filter(SourceDataRow.cycle_id == cycle.id)
         .order_by(SourceDataRow.row_order, SourceDataRow.id)
         .all()

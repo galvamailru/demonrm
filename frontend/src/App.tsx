@@ -16,10 +16,12 @@ import {
   fetchSnapshotGrid,
   fetchSnapshots,
   fetchSourceGrid,
+  fetchTiersGrid,
   saveChannelsGrid,
   saveCustomersGrid,
   savePromosGrid,
   saveSourceGrid,
+  saveTiersGrid,
   publishCycle,
   updateCycle,
   updateCycleStatus,
@@ -35,6 +37,8 @@ type TabId =
   | "dimensions"
   | "snapshots";
 
+type GridKey = TabId | "tiers";
+
 const STATUS_LABELS: Record<CycleStatus, string> = {
   draft: "Черновик",
   simulated: "Симуляция",
@@ -46,8 +50,12 @@ export default function App() {
   const [cycles, setCycles] = useState<Cycle[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("source");
-  const [schemas, setSchemas] = useState<Partial<Record<TabId, GridSchema | null>>>({});
-  const [pending, setPending] = useState<Partial<Record<TabId, Record<string, unknown>[]>>>({});
+  const [schemas, setSchemas] = useState<Partial<Record<GridKey, GridSchema | null>>>({});
+  const [pending, setPending] = useState<Partial<Record<GridKey, Record<string, unknown>[]>>>({});
+  const [selectedSourceRow, setSelectedSourceRow] = useState<Record<string, unknown> | null>(
+    null
+  );
+  const [filterTiersBySelection, setFilterTiersBySelection] = useState(true);
   const [totals, setTotals] = useState<Record<string, number> | null>(null);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | null>(null);
@@ -80,8 +88,11 @@ export default function App() {
     async (tab: TabId, cycleId: number) => {
       switch (tab) {
         case "source": {
-          const grid = await fetchSourceGrid(cycleId);
-          setSchemas((s) => ({ ...s, source: grid }));
+          const [grid, tiers] = await Promise.all([
+            fetchSourceGrid(cycleId),
+            fetchTiersGrid(cycleId),
+          ]);
+          setSchemas((s) => ({ ...s, source: grid, tiers }));
           break;
         }
         case "promos": {
@@ -170,12 +181,28 @@ export default function App() {
     }
   }, [filterCategory, filterChannel, filterCustomer, pricingDate, activeTab, selectedId]);
 
-  const displaySchema = (tab: TabId): GridSchema | null => {
+  const displaySchema = (tab: GridKey): GridSchema | null => {
     const base = schemas[tab];
     const rows = pending[tab];
     if (!base) return null;
     if (rows) return { ...base, rows };
     return base;
+  };
+
+  const displayTiersSchema = (): GridSchema | null => {
+    const base = displaySchema("tiers");
+    if (!base) return null;
+    if (!filterTiersBySelection || !selectedSourceRow?.id) return base;
+    const sid = Number(selectedSourceRow.id);
+    return {
+      ...base,
+      rows: base.rows.filter((r) => Number(r.source_row_id) === sid),
+    };
+  };
+
+  const allTiersRows = (): Record<string, unknown>[] => {
+    const base = pending.tiers ?? schemas.tiers?.rows ?? [];
+    return base as Record<string, unknown>[];
   };
 
   const handleSaveCycleSettings = async () => {
@@ -193,15 +220,23 @@ export default function App() {
   const handleSaveTab = async () => {
     if (!selectedId) return;
     const rows = pending[activeTab];
-    if (!rows) return;
+    const tierRows = pending.tiers;
+    if (!rows && activeTab !== "source") return;
+    if (activeTab === "source" && !rows && !tierRows) return;
     setLoading(true);
     try {
-      if (activeTab === "source") await saveSourceGrid(selectedId, rows);
-      else if (activeTab === "promos") await savePromosGrid(selectedId, rows);
+      if (activeTab === "source") {
+        if (rows) await saveSourceGrid(selectedId, rows);
+        if (tierRows) await saveTiersGrid(selectedId, tierRows);
+      } else if (activeTab === "promos" && rows) await savePromosGrid(selectedId, rows);
       else if (activeTab === "customers") await saveCustomersGrid(rows);
       else if (activeTab === "channels") await saveChannelsGrid(rows);
       setMessage("Сохранено");
-      setPending((p) => ({ ...p, [activeTab]: undefined }));
+      setPending((p) => {
+        const next = { ...p, [activeTab]: undefined };
+        if (activeTab === "source") next.tiers = undefined;
+        return next;
+      });
       await reloadAll(selectedId);
       await loadCycles();
     } catch (e: unknown) {
@@ -279,12 +314,30 @@ export default function App() {
       if (c.type === "checkbox") empty[c.key] = true;
       else if (c.type === "number") empty[c.key] = 0;
       else if (c.key === "scope_type") empty[c.key] = "all";
-      else if (c.key === "volume_tiers")
-        empty[c.key] = '[{"min_volume":0,"discount_pct":0}]';
       else empty[c.key] = "";
     });
     const rows = [...(pending[activeTab] ?? schema.rows), empty];
     setPending((p) => ({ ...p, [activeTab]: rows }));
+  };
+
+  const addTierRow = () => {
+    const sid = selectedSourceRow?.id ? Number(selectedSourceRow.id) : 0;
+    if (!sid) {
+      setError("Сначала выберите строку в матрице цен (слева)");
+      return;
+    }
+    setError(null);
+    const empty: Record<string, unknown> = {
+      id: null,
+      source_row_id: sid,
+      sku: selectedSourceRow?.sku ?? "",
+      product_name: selectedSourceRow?.product_name ?? "",
+      customer_code: selectedSourceRow?.customer_code ?? "",
+      min_volume: 0,
+      discount_pct: 0,
+    };
+    const rows = [...allTiersRows(), empty];
+    setPending((p) => ({ ...p, tiers: rows }));
   };
 
   const tabReadOnly =
@@ -401,7 +454,13 @@ export default function App() {
         <button
           type="button"
           className="btn"
-          disabled={loading || tabReadOnly || !pending[activeTab]}
+          disabled={
+            loading ||
+            tabReadOnly ||
+            (activeTab === "source"
+              ? !pending.source && !pending.tiers
+              : !pending[activeTab])
+          }
           onClick={handleSaveTab}
         >
           Сохранить вкладку
@@ -443,10 +502,20 @@ export default function App() {
           type="button"
           className="btn secondary"
           disabled={loading || tabReadOnly}
-          onClick={addRow}
+          onClick={activeTab === "source" ? addRow : addRow}
         >
-          + Строка
+          + Строка {activeTab === "source" ? "матрицы" : ""}
         </button>
+        {activeTab === "source" && (
+          <button
+            type="button"
+            className="btn secondary"
+            disabled={loading || isReadOnly}
+            onClick={addTierRow}
+          >
+            + Ступень tier
+          </button>
+        )}
       </section>
 
       {(message || error) && (
@@ -503,17 +572,72 @@ export default function App() {
         </div>
       )}
 
-      <main className="grid-panel">
+      <main className={`grid-panel ${activeTab === "source" ? "grid-panel-split" : ""}`}>
         {loading && <div className="overlay">Загрузка…</div>}
-        <ExcelGrid
-          schema={displaySchema(activeTab)}
-          readOnly={tabReadOnly}
-          height={activeTab === "dimensions" ? 500 : 440}
-          onDataChange={(rows) => {
-            setPending((p) => ({ ...p, [activeTab]: rows }));
-            setMessage(null);
-          }}
-        />
+        {activeTab === "source" ? (
+          <div className="split-grids">
+            <div className="split-pane">
+              <h3 className="pane-title">Матрица цен</h3>
+              <ExcelGrid
+                schema={displaySchema("source")}
+                readOnly={isReadOnly}
+                height={460}
+                onRowSelect={(row) => setSelectedSourceRow(row)}
+                onDataChange={(rows) => {
+                  setPending((p) => ({ ...p, source: rows }));
+                  setMessage(null);
+                }}
+              />
+            </div>
+            <div className="split-pane">
+              <div className="pane-title-row">
+                <h3 className="pane-title">Volume tiers</h3>
+                <label className="tier-filter">
+                  <input
+                    type="checkbox"
+                    checked={filterTiersBySelection}
+                    onChange={(e) => setFilterTiersBySelection(e.target.checked)}
+                  />
+                  Только выбранная строка
+                  {selectedSourceRow?.id ? (
+                    <span className="tier-hint">
+                      ID {String(selectedSourceRow.id)} · {String(selectedSourceRow.sku)}
+                    </span>
+                  ) : (
+                    <span className="tier-hint">— выберите строку слева</span>
+                  )}
+                </label>
+              </div>
+              <ExcelGrid
+                schema={displayTiersSchema()}
+                readOnly={isReadOnly}
+                height={460}
+                onDataChange={(rows) => {
+                  if (filterTiersBySelection && selectedSourceRow?.id) {
+                    const sid = Number(selectedSourceRow.id);
+                    const others = allTiersRows().filter(
+                      (r) => Number(r.source_row_id) !== sid
+                    );
+                    setPending((p) => ({ ...p, tiers: [...others, ...rows] }));
+                  } else {
+                    setPending((p) => ({ ...p, tiers: rows }));
+                  }
+                  setMessage(null);
+                }}
+              />
+            </div>
+          </div>
+        ) : (
+          <ExcelGrid
+            schema={displaySchema(activeTab)}
+            readOnly={tabReadOnly}
+            height={activeTab === "dimensions" ? 500 : 440}
+            onDataChange={(rows) => {
+              setPending((p) => ({ ...p, [activeTab]: rows }));
+              setMessage(null);
+            }}
+          />
+        )}
       </main>
     </div>
   );

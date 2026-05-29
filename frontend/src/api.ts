@@ -151,20 +151,26 @@ function rowToSource(row: Record<string, unknown>, index: number) {
     trade_spend_per_unit: Number(row.trade_spend_per_unit) || 0,
     unit_cost: Number(row.unit_cost) || 0,
     planned_volume: Number(row.planned_volume) || 0,
-    volume_tiers: parseTiers(row.volume_tiers),
   };
 }
 
-function parseTiers(raw: unknown): { min_volume: number; discount_pct: number }[] {
-  if (!raw) return [];
-  if (typeof raw === "string") {
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return [];
-    }
-  }
-  return raw as { min_volume: number; discount_pct: number }[];
+export async function fetchTiersGrid(cycleId: number): Promise<GridSchema> {
+  const { data } = await api.get<GridSchema>(`/api/cycles/${cycleId}/tiers/grid`);
+  return data;
+}
+
+export async function saveTiersGrid(
+  cycleId: number,
+  rows: Record<string, unknown>[]
+): Promise<void> {
+  const payload = rows.map((row, index) => ({
+    id: row.id ? Number(row.id) : null,
+    source_row_id: Number(row.source_row_id) || 0,
+    tier_order: index,
+    min_volume: Number(row.min_volume) || 0,
+    discount_pct: Number(row.discount_pct) || 0,
+  }));
+  await api.put(`/api/cycles/${cycleId}/tiers`, { rows: payload });
 }
 
 export async function saveSourceGrid(

@@ -1,4 +1,3 @@
-import json
 from datetime import date
 
 from sqlalchemy.orm import Session
@@ -10,7 +9,20 @@ from app.models import (
     PromoRule,
     PromoScopeType,
     SourceDataRow,
+    VolumeTier,
 )
+
+
+def _add_tiers(db: Session, source_row_id: int, tiers: list[dict]) -> None:
+    for order, tier in enumerate(tiers):
+        db.add(
+            VolumeTier(
+                source_row_id=source_row_id,
+                tier_order=order,
+                min_volume=float(tier["min_volume"]),
+                discount_pct=float(tier["discount_pct"]),
+            )
+        )
 
 
 def seed_demo_data(db: Session) -> None:
@@ -40,8 +52,6 @@ def seed_demo_data(db: Session) -> None:
         description="Демо-цикл NRM с матрицей клиент×канал",
         pricing_date=date(2026, 4, 15),
         currency_code="RUB",
-        filter_category=None,
-        filter_channel=None,
     )
     db.add(cycle)
     db.flush()
@@ -50,6 +60,10 @@ def seed_demo_data(db: Session) -> None:
         {"min_volume": 0, "discount_pct": 0},
         {"min_volume": 10000, "discount_pct": 2},
         {"min_volume": 20000, "discount_pct": 4},
+    ]
+    tiers_yogurt = [
+        {"min_volume": 0, "discount_pct": 0},
+        {"min_volume": 5000, "discount_pct": 3},
     ]
 
     demo_rows = [
@@ -117,7 +131,7 @@ def seed_demo_data(db: Session) -> None:
             2.0,
             28.0,
             25000,
-            [{"min_volume": 0, "discount_pct": 0}, {"min_volume": 5000, "discount_pct": 3}],
+            tiers_yogurt,
         ),
         (
             "SKU-003",
@@ -144,32 +158,34 @@ def seed_demo_data(db: Session) -> None:
     ]
 
     for i, row in enumerate(demo_rows):
-        db.add(
-            SourceDataRow(
-                cycle_id=cycle.id,
-                row_order=i,
-                sku=row[0],
-                product_name=row[1],
-                category=row[2],
-                channel=row[3],
-                customer_code=row[4],
-                valid_from=row[5],
-                valid_to=row[6],
-                currency_code=row[7],
-                exchange_rate=row[8],
-                uom=row[9],
-                units_per_uom=row[10],
-                tax_rate_pct=row[11],
-                list_price=row[12],
-                contract_discount_pct=row[13],
-                promo_discount_pct=row[14],
-                off_invoice_pct=row[15],
-                trade_spend_per_unit=row[16],
-                unit_cost=row[17],
-                planned_volume=row[18],
-                volume_tiers=row[19],
-            )
+        tiers = row[19]
+        src = SourceDataRow(
+            cycle_id=cycle.id,
+            row_order=i,
+            sku=row[0],
+            product_name=row[1],
+            category=row[2],
+            channel=row[3],
+            customer_code=row[4],
+            valid_from=row[5],
+            valid_to=row[6],
+            currency_code=row[7],
+            exchange_rate=row[8],
+            uom=row[9],
+            units_per_uom=row[10],
+            tax_rate_pct=row[11],
+            list_price=row[12],
+            contract_discount_pct=row[13],
+            promo_discount_pct=row[14],
+            off_invoice_pct=row[15],
+            trade_spend_per_unit=row[16],
+            unit_cost=row[17],
+            planned_volume=row[18],
         )
+        db.add(src)
+        db.flush()
+        if tiers:
+            _add_tiers(db, src.id, tiers)
 
     db.add(
         PromoRule(
@@ -209,8 +225,6 @@ def seed_demo_data(db: Session) -> None:
             discount_pct=3.0,
             scope_type=PromoScopeType.CHANNEL,
             scope_value="modern_trade",
-            valid_from=None,
-            valid_to=None,
         )
     )
 
