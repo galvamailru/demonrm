@@ -484,6 +484,79 @@ body {
   margin-left: 0.35rem;
 }
 
+.compare-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.compare-chart-card {
+  margin: 0;
+  padding: 0.75rem 1rem 0.5rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.compare-chart-card figcaption {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.compare-chart-sub {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.compare-chart-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.compare-chart-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.compare-chart-axis {
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+
+.compare-chart-zero {
+  stroke: #94a3b8;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.compare-chart-tick {
+  font-size: 9px;
+  fill: var(--muted);
+}
+
+.compare-chart-value {
+  font-size: 9px;
+  font-weight: 600;
+  fill: var(--text);
+}
+
+.compare-chart-label {
+  font-size: 9px;
+  fill: var(--muted);
+}
+
+.compare-chart-bar {
+  opacity: 0.92;
+}
+
 .excel-grid-wrap {
   overflow: auto;
 }

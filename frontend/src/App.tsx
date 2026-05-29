@@ -30,6 +30,7 @@ import {
   updateCycleStatus,
   type GridSchema,
 } from "./api";
+import { CompareCharts } from "./CompareCharts";
 import ExcelGrid from "./ExcelGrid";
 import MethodologyPanel from "./MethodologyPanel";
 import RoadmapPanel from "./RoadmapPanel";
@@ -725,6 +726,11 @@ export default function App() {
               <strong>{compareResult.totals.gross_margin_delta?.toLocaleString("ru-RU")}</strong>
             </div>
           </div>
+          <CompareCharts
+            totals={compareResult.totals}
+            baseLabel={compareResult.base_cycle_name}
+            compareLabel={compareResult.compare_cycle_name}
+          />
         </section>
       )}
 
