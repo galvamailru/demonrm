@@ -9,7 +9,6 @@ import {
   compareCycles,
   createCycle,
   type CycleCompareResult,
-  expandMatrix,
   fetchChannelsGrid,
   fetchCustomersGrid,
   fetchCycles,
@@ -31,6 +30,7 @@ import {
 } from "./api";
 import ExcelGrid from "./ExcelGrid";
 import MethodologyPanel from "./MethodologyPanel";
+import RoadmapPanel from "./RoadmapPanel";
 import type { HelpPageId } from "./methodology";
 
 type TabId =
@@ -40,7 +40,8 @@ type TabId =
   | "channels"
   | "dimensions"
   | "snapshots"
-  | "compare";
+  | "compare"
+  | "roadmap";
 
 type GridKey = TabId | "tiers";
 
@@ -307,22 +308,6 @@ export default function App() {
     }
   };
 
-  const handleExpandMatrix = async () => {
-    if (!selectedId) return;
-    const skus = prompt("SKU через запятую:", "SKU-004,SKU-005");
-    const custs = prompt("Коды клиентов:", "CUST-AUCHAN,CUST-X5");
-    const chs = prompt("Каналы:", "modern_trade,e_com");
-    if (!skus || !custs || !chs) return;
-    const res = await expandMatrix(
-      selectedId,
-      skus.split(",").map((s) => s.trim()),
-      custs.split(",").map((s) => s.trim()),
-      chs.split(",").map((s) => s.trim())
-    );
-    setMessage(`Добавлено строк матрицы: ${res.created}`);
-    await reloadAll(selectedId);
-  };
-
   const addRow = () => {
     const schema = schemas[activeTab];
     if (!schema) return;
@@ -380,7 +365,13 @@ export default function App() {
   };
 
   const helpPage: HelpPageId =
-    activeTab === "compare" ? "compare" : (activeTab as HelpPageId);
+    activeTab === "compare"
+      ? "compare"
+      : activeTab === "roadmap"
+        ? "source"
+        : (activeTab as HelpPageId);
+
+  const isRoadmapTab = activeTab === "roadmap";
 
   const TABS: { id: TabId; label: string }[] = [
     { id: "source", label: "Матрица цен" },
@@ -390,6 +381,7 @@ export default function App() {
     { id: "dimensions", label: "Измерения" },
     { id: "compare", label: "Сравнение циклов" },
     { id: "snapshots", label: "Snapshots" },
+    { id: "roadmap", label: "Развитие NRM" },
   ];
 
   return (
@@ -411,11 +403,11 @@ export default function App() {
             const c = await createCycle(name, undefined, copyFrom);
             await loadCycles();
             setSelectedId(c.id);
-            if (copyFrom) {
-              setMessage(
-                `Цикл «${name}» создан: скопированы данные из #${copyFrom} (матрица, tiers, промо).`
-              );
-            }
+            setMessage(
+              copyFrom
+                ? `Цикл «${name}» создан: скопированы данные из #${copyFrom}.`
+                : `Цикл «${name}» создан с демо-данными (матрица, tiers, промо).`
+            );
           }}
         >
           + Цикл
@@ -443,8 +435,9 @@ export default function App() {
         )}
       </section>
 
-      <MethodologyPanel page={helpPage} />
+      {!isRoadmapTab && <MethodologyPanel page={helpPage} />}
 
+      {!isRoadmapTab && (
       <section className="filters-panel">
         <h3>Параметры расчёта</h3>
         <div className="filters-row">
@@ -494,7 +487,9 @@ export default function App() {
           </button>
         </div>
       </section>
+      )}
 
+      {!isRoadmapTab && (
       <section className="actions">
         {activeTab !== "compare" && (
           <button
@@ -546,14 +541,6 @@ export default function App() {
             <button
               type="button"
               className="btn secondary"
-              disabled={loading || isReadOnly || activeTab !== "source"}
-              onClick={handleExpandMatrix}
-            >
-              Развернуть матрицу
-            </button>
-            <button
-              type="button"
-              className="btn secondary"
               disabled={loading || tabReadOnly}
               onClick={addRow}
             >
@@ -582,12 +569,13 @@ export default function App() {
           </button>
         )}
       </section>
+      )}
 
       {(message || error) && (
         <div className={`alert ${error ? "error" : "success"}`}>{error || message}</div>
       )}
 
-      {totals && (
+      {!isRoadmapTab && totals && (
         <section className="totals-panel">
           <h3>Итоги</h3>
           <div className="totals-grid">
@@ -696,10 +684,12 @@ export default function App() {
       )}
 
       <main
-        className={`grid-panel ${activeTab === "source" || activeTab === "compare" ? "grid-panel-split" : ""}`}
+        className={`grid-panel ${isRoadmapTab ? "grid-panel-roadmap" : ""} ${activeTab === "source" || activeTab === "compare" ? "grid-panel-split" : ""}`}
       >
-        {loading && <div className="overlay">Загрузка…</div>}
-        {activeTab === "source" ? (
+        {loading && !isRoadmapTab && <div className="overlay">Загрузка…</div>}
+        {isRoadmapTab ? (
+          <RoadmapPanel />
+        ) : activeTab === "source" ? (
           <div className="split-grids">
             <div className="split-pane">
               <h3 className="pane-title">Матрица цен</h3>

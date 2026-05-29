@@ -140,13 +140,6 @@ class MatrixMasterRow(BaseModel):
     active: bool = True
 
 
-class MatrixExpandRequest(BaseModel):
-    skus: list[str]
-    customer_codes: list[str]
-    channel_codes: list[str]
-    template: SourceRowIn | None = None
-
-
 class DimensionRowOut(BaseModel):
     source_id: int
     sku: str

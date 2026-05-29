@@ -25,7 +25,8 @@ def _add_tiers(db: Session, source_row_id: int, tiers: list[dict]) -> None:
         )
 
 
-def seed_demo_data(db: Session) -> None:
+def ensure_master_data(db: Session) -> None:
+    """Справочники клиентов и каналов для демо."""
     if db.query(Customer).count() == 0:
         for code, name, region in [
             ("CUST-AUCHAN", "Ашан", "Central"),
@@ -44,18 +45,9 @@ def seed_demo_data(db: Session) -> None:
 
     db.flush()
 
-    if db.query(NrmCycle).count() > 0:
-        return
 
-    cycle = NrmCycle(
-        name="Q2 2026 — Modern Trade",
-        description="Демо-цикл NRM с матрицей клиент×канал",
-        pricing_date=date(2026, 4, 15),
-        currency_code="RUB",
-    )
-    db.add(cycle)
-    db.flush()
-
+def populate_cycle_demo_data(db: Session, cycle_id: int) -> dict[str, int]:
+    """Матрица цен, tiers и промо-правила для нового цикла."""
     tiers_dairy = [
         {"min_volume": 0, "discount_pct": 0},
         {"min_volume": 10000, "discount_pct": 2},
@@ -157,10 +149,12 @@ def seed_demo_data(db: Session) -> None:
         ),
     ]
 
+    source_count = 0
+    tier_count = 0
     for i, row in enumerate(demo_rows):
         tiers = row[19]
         src = SourceDataRow(
-            cycle_id=cycle.id,
+            cycle_id=cycle_id,
             row_order=i,
             sku=row[0],
             product_name=row[1],
@@ -184,12 +178,15 @@ def seed_demo_data(db: Session) -> None:
         )
         db.add(src)
         db.flush()
+        source_count += 1
         if tiers:
             _add_tiers(db, src.id, tiers)
+            tier_count += len(tiers)
 
+    promo_count = 0
     db.add(
         PromoRule(
-            cycle_id=cycle.id,
+            cycle_id=cycle_id,
             row_order=0,
             name="Dairy Spring",
             priority=1,
@@ -201,9 +198,10 @@ def seed_demo_data(db: Session) -> None:
             valid_to=date(2026, 6, 30),
         )
     )
+    promo_count += 1
     db.add(
         PromoRule(
-            cycle_id=cycle.id,
+            cycle_id=cycle_id,
             row_order=1,
             name="X5 Exclusive",
             priority=2,
@@ -215,9 +213,10 @@ def seed_demo_data(db: Session) -> None:
             valid_to=date(2026, 12, 31),
         )
     )
+    promo_count += 1
     db.add(
         PromoRule(
-            cycle_id=cycle.id,
+            cycle_id=cycle_id,
             row_order=2,
             name="Modern Trade Boost",
             priority=5,
@@ -227,5 +226,28 @@ def seed_demo_data(db: Session) -> None:
             scope_value="modern_trade",
         )
     )
+    promo_count += 1
 
+    return {
+        "source_rows": source_count,
+        "tiers": tier_count,
+        "promos": promo_count,
+    }
+
+
+def seed_demo_data(db: Session) -> None:
+    ensure_master_data(db)
+
+    if db.query(NrmCycle).count() > 0:
+        return
+
+    cycle = NrmCycle(
+        name="Q2 2026 — Modern Trade",
+        description="Демо-цикл NRM с матрицей клиент×канал",
+        pricing_date=date(2026, 4, 15),
+        currency_code="RUB",
+    )
+    db.add(cycle)
+    db.flush()
+    populate_cycle_demo_data(db, cycle.id)
     db.commit()

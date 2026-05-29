@@ -44,6 +44,10 @@ export default function MethodologyPanel({ page }: MethodologyPanelProps) {
         )}
       </section>
 
+      <p className="methodology-roadmap-hint">
+        План развития без интеграций (волны 1–3) — вкладка <strong>Развитие NRM</strong>.
+      </p>
+
       <details className="methodology-global">
         <summary>Охват demo vs полный NRM-процесс</summary>
         <div className="methodology-global-body">

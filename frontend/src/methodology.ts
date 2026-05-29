@@ -38,6 +38,202 @@ export const NRM_PROCESS_MAP = {
   ],
 };
 
+export interface RoadmapFeature {
+  name: string;
+  why: string;
+  how: string;
+}
+
+export interface RoadmapWave {
+  wave: 1 | 2 | 3;
+  title: string;
+  subtitle: string;
+  features: RoadmapFeature[];
+}
+
+/** Roadmap приближения к production NRM без интеграций с ERP/CRM/BI */
+export const PRODUCTION_ROADMAP = {
+  title: "Развитие demo → production NRM",
+  intro:
+    "Функции ниже можно реализовать на текущем стеке (PostgreSQL + API + React) без подключения внешних систем. " +
+    "Интеграции с ERP, CRM и BI остаются отдельным этапом.",
+  waves: [
+    {
+      wave: 1,
+      title: "Волна 1 — быстрый эффект",
+      subtitle: "Контроль качества цен, отчётность и согласование",
+      features: [
+        {
+          name: "Guardrails (floor price / min margin)",
+          why: "Блокировка недопустимых цен до публикации",
+          how: "Пороги на цикле; флаги по строкам при расчёте; запрет publish при critical",
+        },
+        {
+          name: "Валидация матрицы (MDM-lite)",
+          why: "Меньше ошибок до расчёта",
+          how: "Дубликаты SKU×клиент×канал с пересечением дат; неизвестные коды; отрицательный net/margin",
+        },
+        {
+          name: "Расширенный GTN waterfall",
+          why: "Ближе к gross-to-net отчёту финансов",
+          how: "Опциональные поля: listing fee, logistics, rebate in arrears % → ступени в измерениях",
+        },
+        {
+          name: "Waterfall diff при сравнении",
+          why: "Понять, где потеряна маржа между сценариями",
+          how: "Δ по contract / promo / tier / off-invoice / trade, не только Net Revenue",
+        },
+        {
+          name: "Price / volume / mix",
+          why: "Стандарт RGM-анализа",
+          how: "Декомпозиция Δ выручки при сравнении циклов с одинаковым объёмом",
+        },
+        {
+          name: "Экспорт CSV / Excel",
+          why: "Обмен с финансами без API",
+          how: "Выгрузка матрицы, измерений, snapshot и сравнения из UI",
+        },
+        {
+          name: "Audit trail изменений",
+          why: "Аудит и разбор спорных решений",
+          how: "Журнал: сущность, поле, было/стало, время, пользователь (demo_user)",
+        },
+        {
+          name: "Комментарии к циклу / строке",
+          why: "Контекст при согласовании",
+          how: "Текст + автор + дата на цикл или строку матрицы",
+        },
+      ],
+    },
+    {
+      wave: 2,
+      title: "Волна 2 — процесс и промо (TPM-lite)",
+      subtitle: "Планирование промо и иерархии без claims из ERP",
+      features: [
+        {
+          name: "Календарь промо",
+          why: "Визуальное планирование пересечений",
+          how: "Timeline / Gantt по valid_from / valid_to существующих правил",
+        },
+        {
+          name: "Предупреждения о пересечениях",
+          why: "Конфликты non-stack и двойного промо",
+          how: "Проверка при сохранении: два non-stack на один scope и даты",
+        },
+        {
+          name: "Funding split",
+          why: "Кто финансирует промо",
+          how: "Поля manufacturer_pct / retailer_pct на правиле; split trade spend в отчёте",
+        },
+        {
+          name: "Бюджет trade spend",
+          why: "Контроль инвестиций в торговые условия",
+          how: "Лимит на цикл vs сумма trade × volume + off-invoice в деньгах",
+        },
+        {
+          name: "Baseline + uplift (упрощённый ROI)",
+          why: "Оценка промо без ML и DWH",
+          how: "Ручной baseline / promo volume; ROTI = (incremental margin − cost) / cost",
+        },
+        {
+          name: "Иерархия продуктов",
+          why: "Rollup brand → category → SKU",
+          how: "Справочник SKU с parent; группировка и subtotal в измерениях",
+        },
+        {
+          name: "Иерархия клиентов",
+          why: "Условия на уровне холдинга",
+          how: "parent_customer_code; наследование contract % с override на строке",
+        },
+        {
+          name: "Усиленный workflow",
+          why: "Согласование как в enterprise",
+          how: "Пороги margin → ограничения simulated / publish; комментарий при отклонении",
+        },
+        {
+          name: "Sign-off lite",
+          why: "Фиксация решения без eIDAS",
+          how: "При publish: ФИО/роль + checkbox + timestamp в metadata snapshot",
+        },
+      ],
+    },
+    {
+      wave: 3,
+      title: "Волна 3 — аналитика на ручных допущениях",
+      subtitle: "RGM-сценарии без исторических данных из DWH",
+      features: [
+        {
+          name: "Эластичность спроса",
+          why: "«Что если» по цене и объёму",
+          how: "Коэффициент ε на SKU/категорию: volume_new = volume × (price_new/price_old)^ε",
+        },
+        {
+          name: "Cannibalization / halo",
+          why: "Влияние промо на соседние SKU",
+          how: "Матрица коэффициентов вручную; предупреждение в симуляции",
+        },
+        {
+          name: "Pack-price architecture",
+          why: "Паритет упаковок в линейке",
+          how: "pack_size, цена за pack → derived EA; проверка паритета SKU",
+        },
+        {
+          name: "Price index vs конкурент",
+          why: "Позиционирование без price scraper",
+          how: "Поле competitor_ref_price + gap % в измерениях",
+        },
+        {
+          name: "Сравнение 3+ сценариев",
+          why: "Комитет по ценам",
+          how: "Таблица циклов × KPI или база + N альтернатив",
+        },
+        {
+          name: "Diff snapshot ↔ snapshot",
+          why: "Версии внутри цикла",
+          how: "Сравнение двух публикаций одного цикла",
+        },
+        {
+          name: "План / факт (упрощённо)",
+          why: "Отчётность без live ERP",
+          how: "Ручная загрузка CSV факта объёма/выручки → колонки plan vs actual",
+        },
+      ],
+    },
+  ] as RoadmapWave[],
+  deferred: {
+    title: "Отложено до интеграций или отдельного продукта",
+    items: [
+      {
+        name: "Accrual, claims, deductions",
+        reason: "Нужны документы и статусы выплат из ERP",
+      },
+      {
+        name: "Автооптимизация промо под бюджет",
+        reason: "Требуется модель спроса или история продаж",
+      },
+      {
+        name: "Юридически значимый e-sign",
+        reason: "Отдельный провайдер подписи",
+      },
+      {
+        name: "Автосверка с инвойсами",
+        reason: "Нужны фактические строки счетов",
+      },
+      {
+        name: "Интеграция ERP / CRM / BI",
+        reason: "Вне scope demo; CSV/Excel — промежуточный вариант",
+      },
+    ],
+  },
+  recommendedOrder: [
+    "Guardrails + валидация матрицы",
+    "Waterfall diff + экспорт",
+    "Календарь промо + пересечения + бюджет trade",
+    "Иерархии + rollup-отчёты",
+    "Ручная эластичность и uplift ROI",
+  ],
+};
+
 export const DEMO_LIMITATIONS = {
   title: "Это demo NRM, не полноценный TPM/RGM",
   description:
@@ -62,8 +258,9 @@ export const PAGE_HELP: Record<HelpPageId, PageHelp> = {
       "Задайте valid_from / valid_to — строка участвует в расчёте только если pricing date цикла попадает в интервал.",
       "При другой валюте строки укажите currency_code и exchange_rate к валюте цикла.",
       "Выберите строку в верхней таблице — ниже отредактируйте связанные volume tiers.",
-      "Сохраните вкладку → «Рассчитать» (панель действий). При необходимости — «Развернуть матрицу».",
-      "Новый цикл («+ Цикл»): копируются матрица, tiers, промо и параметры расчёта из выбранного цикла.",
+      "Сохраните вкладку → «Рассчитать» (панель действий).",
+      "Новый цикл («+ Цикл»): автоматически подгружаются демо-данные (4 строки матрицы, tiers, 3 промо). " +
+        "Если выбран другой цикл — копируются его данные вместо шаблона.",
     ],
     inApp: [
       "Pricing date и фильтры (категория/канал/клиент) задаются выше — они сужают, какие строки попадут в расчёт.",

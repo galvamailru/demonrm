@@ -35,7 +35,6 @@ from app.schemas import (
     CycleUpdate,
     DimensionRowOut,
     GridSchema,
-    MatrixExpandRequest,
     MatrixMasterRow,
     PromoBulkUpdate,
     PromoRuleIn,
@@ -49,7 +48,7 @@ from app.schemas import (
     TierRowIn,
     CycleCompareResponse,
 )
-from app.seed import seed_demo_data
+from app.seed import ensure_master_data, populate_cycle_demo_data, seed_demo_data
 
 app = FastAPI(title="Demo NRM API", version="2.0.0")
 
@@ -244,6 +243,8 @@ def list_cycles(db: Session = Depends(get_db)) -> list[NrmCycle]:
 
 @app.post("/api/cycles", response_model=CycleOut, status_code=201)
 def create_cycle(payload: CycleCreate, db: Session = Depends(get_db)) -> NrmCycle:
+    ensure_master_data(db)
+
     source: NrmCycle | None = None
     if payload.copy_from_cycle_id is not None:
         source = _require_cycle(db, payload.copy_from_cycle_id)
@@ -251,7 +252,7 @@ def create_cycle(payload: CycleCreate, db: Session = Depends(get_db)) -> NrmCycl
     cycle = NrmCycle(
         name=payload.name,
         description=payload.description,
-        pricing_date=payload.pricing_date or date.today(),
+        pricing_date=payload.pricing_date or date(2026, 4, 15),
         currency_code=payload.currency_code,
     )
     if source:
@@ -266,6 +267,8 @@ def create_cycle(payload: CycleCreate, db: Session = Depends(get_db)) -> NrmCycl
 
     if source:
         copy_cycle_data(db, source.id, cycle.id)
+    else:
+        populate_cycle_demo_data(db, cycle.id)
 
     db.commit()
     db.refresh(cycle)
@@ -559,49 +562,6 @@ def update_channels(payload: list[MatrixMasterRow], db: Session = Depends(get_db
     _bulk_master(Channel, payload, db)
     db.commit()
     return {"ok": True}
-
-
-@app.post("/api/cycles/{cycle_id}/matrix/expand")
-def expand_matrix(
-    cycle_id: int, payload: MatrixExpandRequest, db: Session = Depends(get_db)
-):
-    cycle = _require_cycle(db, cycle_id)
-    if cycle.status == CycleStatus.PUBLISHED:
-        raise HTTPException(400, "Published cycle is read-only")
-    template = payload.template or SourceRowIn()
-    existing_keys = {
-        (r.sku, r.customer_code, r.channel)
-        for r in db.query(SourceDataRow).filter(SourceDataRow.cycle_id == cycle_id).all()
-    }
-    order = (
-        db.query(SourceDataRow)
-        .filter(SourceDataRow.cycle_id == cycle_id)
-        .count()
-    )
-    created = 0
-    for sku in payload.skus:
-        for cust in payload.customer_codes:
-            for ch in payload.channel_codes:
-                key = (sku, cust, ch)
-                if key in existing_keys:
-                    continue
-                data = template.model_dump(exclude={"id"})
-                data["sku"] = sku
-                data["customer_code"] = cust
-                data["channel"] = ch
-                data["product_name"] = data.get("product_name") or sku
-                allowed = {c.name for c in SourceDataRow.__table__.columns} - {"id", "cycle_id"}
-                db.add(
-                    SourceDataRow(
-                        cycle_id=cycle_id,
-                        row_order=order,
-                        **{k: v for k, v in data.items() if k in allowed},
-                    )
-                )
-                order += 1
-                created += 1
-    db.commit()
-    return {"created": created}
 
 
 # --- Calculate ---

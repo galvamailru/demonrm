@@ -239,19 +239,6 @@ function masterRow(row: Record<string, unknown>) {
   };
 }
 
-export async function expandMatrix(
-  cycleId: number,
-  skus: string[],
-  customer_codes: string[],
-  channel_codes: string[]
-): Promise<{ created: number }> {
-  const { data } = await api.post<{ created: number }>(
-    `/api/cycles/${cycleId}/matrix/expand`,
-    { skus, customer_codes, channel_codes }
-  );
-  return data;
-}
-
 export async function calculateDimensions(
   cycleId: number,
   filters?: CalcFilters
