@@ -78,33 +78,41 @@ export default function App() {
   const loadTab = useCallback(
     async (tab: TabId, cycleId: number) => {
       switch (tab) {
-        case "source":
-          setSchemas((s) => ({ ...s, source: await fetchSourceGrid(cycleId) }));
+        case "source": {
+          const grid = await fetchSourceGrid(cycleId);
+          setSchemas((s) => ({ ...s, source: grid }));
           break;
-        case "promos":
-          setSchemas((s) => ({ ...s, promos: await fetchPromosGrid(cycleId) }));
+        }
+        case "promos": {
+          const grid = await fetchPromosGrid(cycleId);
+          setSchemas((s) => ({ ...s, promos: grid }));
           break;
-        case "customers":
-          setSchemas((s) => ({ ...s, customers: await fetchCustomersGrid() }));
+        }
+        case "customers": {
+          const grid = await fetchCustomersGrid();
+          setSchemas((s) => ({ ...s, customers: grid }));
           break;
-        case "channels":
-          setSchemas((s) => ({ ...s, channels: await fetchChannelsGrid() }));
+        }
+        case "channels": {
+          const grid = await fetchChannelsGrid();
+          setSchemas((s) => ({ ...s, channels: grid }));
           break;
-        case "dimensions":
-          setSchemas((s) => ({
-            ...s,
-            dimensions: await fetchDimensionsGrid(cycleId, calcFilters),
-          }));
+        }
+        case "dimensions": {
+          const grid = await fetchDimensionsGrid(cycleId, calcFilters);
+          setSchemas((s) => ({ ...s, dimensions: grid }));
           break;
+        }
         case "snapshots": {
           const list = await fetchSnapshots(cycleId);
           setSnapshots(list);
-          if (list.length && !selectedSnapshotId) {
-            setSelectedSnapshotId(list[0].id);
-            setSchemas((s) => ({
-              ...s,
-              snapshots: await fetchSnapshotGrid(list[0].id),
-            }));
+          if (list.length) {
+            const snapId = selectedSnapshotId ?? list[0].id;
+            if (!selectedSnapshotId) setSelectedSnapshotId(snapId);
+            const grid = await fetchSnapshotGrid(snapId);
+            setSchemas((s) => ({ ...s, snapshots: grid }));
+          } else {
+            setSchemas((s) => ({ ...s, snapshots: { columns: [], rows: [] } }));
           }
           break;
         }
@@ -478,10 +486,8 @@ export default function App() {
               onChange={async (e) => {
                 const id = Number(e.target.value);
                 setSelectedSnapshotId(id);
-                setSchemas((s) => ({
-                  ...s,
-                  snapshots: await fetchSnapshotGrid(id),
-                }));
+                const grid = await fetchSnapshotGrid(id);
+                setSchemas((s) => ({ ...s, snapshots: grid }));
               }}
             >
               {snapshots.map((s) => (
