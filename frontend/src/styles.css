@@ -533,6 +533,12 @@ body {
   color: var(--muted);
 }
 
+.filters-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
 .filters-row input {
   padding: 0.4rem 0.6rem;
   border: 1px solid var(--border);

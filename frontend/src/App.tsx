@@ -83,9 +83,9 @@ export default function App() {
 
   const calcFilters: CalcFilters = useMemo(
     () => ({
-      category: filterCategory || undefined,
-      channel: filterChannel || undefined,
-      customer_code: filterCustomer || undefined,
+      category: filterCategory.trim() || undefined,
+      channel: filterChannel.trim() || undefined,
+      customer_code: filterCustomer.trim() || undefined,
       pricing_date: pricingDate || undefined,
     }),
     [filterCategory, filterChannel, filterCustomer, pricingDate]
@@ -200,9 +200,9 @@ export default function App() {
     const c = cycles.find((x) => x.id === selectedId);
     if (c) {
       setPricingDate(c.pricing_date?.slice(0, 10) ?? "");
-      setFilterCategory(c.filter_category ?? "");
-      setFilterChannel(c.filter_channel ?? "");
-      setFilterCustomer(c.filter_customer_code ?? "");
+      setFilterCategory("");
+      setFilterChannel("");
+      setFilterCustomer("");
     }
     reloadAll(selectedId);
     setTotals(null);
@@ -458,9 +458,9 @@ export default function App() {
             await loadCycles();
             setSelectedId(c.id);
             setPricingDate(c.pricing_date?.slice(0, 10) ?? "");
-            setFilterCategory(c.filter_category ?? "");
-            setFilterChannel(c.filter_channel ?? "");
-            setFilterCustomer(c.filter_customer_code ?? "");
+            setFilterCategory("");
+            setFilterChannel("");
+            setFilterCustomer("");
             setTotals(null);
             setCompareResult(null);
             setMessage(
@@ -500,6 +500,9 @@ export default function App() {
       {!isRoadmapTab && (
       <section className="filters-panel">
         <h3>Параметры расчёта</h3>
+        <p className="filters-hint">
+          Пустые фильтры — все строки матрицы. Заполните только чтобы сузить срез.
+        </p>
         <div className="filters-row">
           <label>
             Pricing date
@@ -515,7 +518,7 @@ export default function App() {
             <input
               value={filterCategory}
               onChange={(e) => setFilterCategory(e.target.value)}
-              placeholder="Dairy"
+              placeholder="все"
               disabled={isReadOnly}
             />
           </label>
@@ -524,7 +527,7 @@ export default function App() {
             <input
               value={filterChannel}
               onChange={(e) => setFilterChannel(e.target.value)}
-              placeholder="modern_trade"
+              placeholder="все"
               disabled={isReadOnly}
             />
           </label>
@@ -533,7 +536,7 @@ export default function App() {
             <input
               value={filterCustomer}
               onChange={(e) => setFilterCustomer(e.target.value)}
-              placeholder="CUST-X5"
+              placeholder="все"
               disabled={isReadOnly}
             />
           </label>

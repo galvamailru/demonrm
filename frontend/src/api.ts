@@ -72,6 +72,19 @@ export interface Snapshot {
   totals: Record<string, number>;
 }
 
+/** Пустая ячейка / дробное число → int для API */
+export function parseOptionalInt(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" && value.trim() === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.trunc(n);
+}
+
+export function parseRequiredInt(value: unknown, fallback = 0): number {
+  return parseOptionalInt(value) ?? fallback;
+}
+
 /** Текст ошибки FastAPI / axios для показа пользователю */
 export function extractApiError(e: unknown, fallback: string): string {
   const err = e as { response?: { data?: { detail?: unknown } }; message?: string };
@@ -105,11 +118,10 @@ export async function createCycle(
   description?: string,
   copyFromCycleId?: number
 ): Promise<Cycle> {
-  const { data } = await api.post<Cycle>("/api/cycles", {
-    name,
-    description,
-    copy_from_cycle_id: copyFromCycleId ?? null,
-  });
+  const body: Record<string, unknown> = { name, description };
+  const copyId = parseOptionalInt(copyFromCycleId);
+  if (copyId != null) body.copy_from_cycle_id = copyId;
+  const { data } = await api.post<Cycle>("/api/cycles", body);
   return data;
 }
 
@@ -164,7 +176,7 @@ export async function fetchChannelsGrid(): Promise<GridSchema> {
 
 function rowToSource(row: Record<string, unknown>, index: number) {
   return {
-    id: row.id ? Number(row.id) : null,
+    id: parseOptionalInt(row.id),
     row_order: index,
     sku: String(row.sku ?? ""),
     product_name: String(row.product_name ?? ""),
@@ -197,13 +209,15 @@ export async function saveTiersGrid(
   cycleId: number,
   rows: Record<string, unknown>[]
 ): Promise<void> {
-  const payload = rows.map((row, index) => ({
-    id: row.id ? Number(row.id) : null,
-    source_row_id: Number(row.source_row_id) || 0,
-    tier_order: index,
-    min_volume: Number(row.min_volume) || 0,
-    discount_pct: Number(row.discount_pct) || 0,
-  }));
+  const payload = rows
+    .map((row, index) => ({
+      id: parseOptionalInt(row.id),
+      source_row_id: parseRequiredInt(row.source_row_id),
+      tier_order: index,
+      min_volume: Number(row.min_volume) || 0,
+      discount_pct: Number(row.discount_pct) || 0,
+    }))
+    .filter((row) => row.source_row_id > 0);
   await api.put(`/api/cycles/${cycleId}/tiers`, { rows: payload });
 }
 
@@ -221,10 +235,10 @@ export async function savePromosGrid(
   rows: Record<string, unknown>[]
 ): Promise<void> {
   const payload = rows.map((row, index) => ({
-    id: row.id ? Number(row.id) : null,
+    id: parseOptionalInt(row.id),
     row_order: index,
     name: String(row.name ?? ""),
-    priority: Number(row.priority) || 10,
+    priority: parseRequiredInt(row.priority, 10),
     stackable: row.stackable === true || row.stackable === "true",
     discount_pct: Number(row.discount_pct) || 0,
     scope_type: String(row.scope_type ?? "all"),
@@ -245,7 +259,7 @@ export async function saveChannelsGrid(rows: Record<string, unknown>[]): Promise
 
 function masterRow(row: Record<string, unknown>) {
   return {
-    id: row.id ? Number(row.id) : null,
+    id: parseOptionalInt(row.id),
     code: String(row.code ?? ""),
     name: String(row.name ?? ""),
     region: String(row.region ?? ""),
@@ -293,8 +307,8 @@ export async function compareCycles(
 ): Promise<CycleCompareResult> {
   const { data } = await api.get<CycleCompareResult>("/api/cycles/compare", {
     params: {
-      base_cycle_id: baseCycleId,
-      compare_cycle_id: compareCycleId,
+      base_cycle_id: parseRequiredInt(baseCycleId),
+      compare_cycle_id: parseRequiredInt(compareCycleId),
       ...filterParams(filters),
     },
   });

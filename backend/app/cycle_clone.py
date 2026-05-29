@@ -41,12 +41,12 @@ _PROMO_FIELDS = (
 
 
 def apply_cycle_settings(source: NrmCycle, target: NrmCycle) -> None:
-    """Параметры расчёта цикла — как у источника."""
+    """Дата и валюта как у источника; фильтры не копируются (по умолчанию — все строки)."""
     target.pricing_date = source.pricing_date
     target.currency_code = source.currency_code
-    target.filter_category = source.filter_category
-    target.filter_channel = source.filter_channel
-    target.filter_customer_code = source.filter_customer_code
+    target.filter_category = None
+    target.filter_channel = None
+    target.filter_customer_code = None
 
 
 def copy_cycle_data(db: Session, from_cycle_id: int, to_cycle_id: int) -> dict[str, int]:

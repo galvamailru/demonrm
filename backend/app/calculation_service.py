@@ -6,17 +6,35 @@ from app.calculator import CalculationFilters, calculate_totals, filter_and_calc
 from app.models import CalculationSnapshot, CycleStatus, NrmCycle, PromoRule, SourceDataRow
 
 
-def build_filters(
-    cycle: NrmCycle,
+def _norm_filter(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    return str(value).strip()
+
+
+def build_query_filters(
     category: str | None = None,
     channel: str | None = None,
     customer_code: str | None = None,
 ) -> CalculationFilters:
+    """Фильтры только из запроса/UI. Пустые значения = все строки."""
     return CalculationFilters(
-        category=category or cycle.filter_category or None,
-        channel=channel or cycle.filter_channel or None,
-        customer_code=customer_code or cycle.filter_customer_code or None,
+        category=_norm_filter(category),
+        channel=_norm_filter(channel),
+        customer_code=_norm_filter(customer_code),
     )
+
+
+def build_filters(
+    _cycle: NrmCycle,
+    category: str | None = None,
+    channel: str | None = None,
+    customer_code: str | None = None,
+) -> CalculationFilters:
+    """Расчёт по параметрам запроса; filter_* в БД цикла не подмешиваются."""
+    return build_query_filters(category, channel, customer_code)
 
 
 def run_calculation(

@@ -1,9 +1,10 @@
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.models import CycleStatus, PromoScopeType
+from app.validators import coerce_int, coerce_optional_int
 
 
 class CycleCreate(BaseModel):
@@ -15,6 +16,11 @@ class CycleCreate(BaseModel):
         default=None,
         description="Скопировать матрицу, tiers, промо и параметры расчёта из этого цикла",
     )
+
+    @field_validator("copy_from_cycle_id", mode="before")
+    @classmethod
+    def _copy_from_int(cls, value: Any) -> int | None:
+        return coerce_optional_int(value)
 
 
 class CycleUpdate(BaseModel):
@@ -75,6 +81,16 @@ class SourceRowIn(BaseModel):
     unit_cost: float = 0.0
     planned_volume: float = 0.0
 
+    @field_validator("id", mode="before")
+    @classmethod
+    def _id_int(cls, value: Any) -> int | None:
+        return coerce_optional_int(value)
+
+    @field_validator("row_order", mode="before")
+    @classmethod
+    def _row_order_int(cls, value: Any) -> int:
+        return coerce_int(value, 0)
+
 
 class SourceRowOut(SourceRowIn):
     id: int
@@ -93,6 +109,18 @@ class TierRowIn(BaseModel):
     tier_order: int = 0
     min_volume: float = 0.0
     discount_pct: float = 0.0
+
+    model_config = {"extra": "ignore"}
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def _id_int(cls, value: Any) -> int | None:
+        return coerce_optional_int(value)
+
+    @field_validator("source_row_id", "tier_order", mode="before")
+    @classmethod
+    def _required_int(cls, value: Any) -> int:
+        return coerce_int(value, 0)
 
 
 class TierRowOut(TierRowIn):
@@ -120,6 +148,17 @@ class PromoRuleIn(BaseModel):
     valid_from: date | None = None
     valid_to: date | None = None
 
+    @field_validator("id", mode="before")
+    @classmethod
+    def _id_int(cls, value: Any) -> int | None:
+        return coerce_optional_int(value)
+
+    @field_validator("row_order", "priority", mode="before")
+    @classmethod
+    def _promo_int(cls, value: Any, info) -> int:
+        default = 10 if info.field_name == "priority" else 0
+        return coerce_int(value, default)
+
 
 class PromoRuleOut(PromoRuleIn):
     id: int
@@ -138,6 +177,11 @@ class MatrixMasterRow(BaseModel):
     name: str = ""
     region: str = ""
     active: bool = True
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def _id_int(cls, value: Any) -> int | None:
+        return coerce_optional_int(value)
 
 
 class DimensionRowOut(BaseModel):
