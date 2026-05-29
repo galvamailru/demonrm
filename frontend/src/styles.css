@@ -329,6 +329,106 @@ body {
   margin-bottom: 0.35rem;
 }
 
+.methodology-wrap {
+  margin-bottom: 1rem;
+}
+
+.methodology-subsection {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #dbeafe;
+}
+
+.methodology-subsection h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.methodology-subsection ul {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.methodology-in-app h4 {
+  color: #1d4ed8;
+}
+
+.methodology-not-included {
+  background: #fffbeb;
+  margin: 1rem -0.25rem 0;
+  padding: 0.75rem;
+  border-radius: 6px;
+  border: 1px solid #fcd34d;
+}
+
+.methodology-not-included h4 {
+  color: #b45309;
+}
+
+.methodology-not-included ul {
+  color: #78350f;
+}
+
+.methodology-global {
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+}
+
+.methodology-global summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #475569;
+  padding: 0.35rem 0;
+}
+
+.methodology-global-body {
+  padding: 0.75rem 0 0.25rem;
+}
+
+.methodology-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 900px) {
+  .methodology-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.methodology-columns h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+}
+
+.methodology-columns ul {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.methodology-global-note {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.methodology-tech-limits {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.82rem;
+  color: #64748b;
+}
+
 .compare-toolbar {
   display: flex;
   flex-wrap: wrap;
