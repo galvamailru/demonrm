@@ -305,10 +305,15 @@ export async function compareCycles(
   compareCycleId: number,
   filters?: CalcFilters
 ): Promise<CycleCompareResult> {
+  const base = parseOptionalInt(baseCycleId);
+  const cmp = parseOptionalInt(compareCycleId);
+  if (!base || !cmp) {
+    throw new Error("Выберите два корректных цикла для сравнения");
+  }
   const { data } = await api.get<CycleCompareResult>("/api/cycles/compare", {
     params: {
-      base_cycle_id: parseRequiredInt(baseCycleId),
-      compare_cycle_id: parseRequiredInt(compareCycleId),
+      base_cycle_id: base,
+      compare_cycle_id: cmp,
       ...filterParams(filters),
     },
   });

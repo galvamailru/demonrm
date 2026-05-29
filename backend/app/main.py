@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from app.cycle_clone import apply_cycle_settings, copy_cycle_data
+from app.validators import coerce_optional_int
 from app.calculation_service import (
     build_filters,
     run_calculation,
@@ -609,17 +610,21 @@ def calculate(
 
 @app.get("/api/cycles/compare", response_model=CycleCompareResponse)
 def compare_cycles(
-    base_cycle_id: int = Query(...),
-    compare_cycle_id: int = Query(...),
+    base_cycle_id: str = Query(..., description="ID цикла A"),
+    compare_cycle_id: str = Query(..., description="ID цикла B"),
     db: Session = Depends(get_db),
     category: str | None = Query(None),
     channel: str | None = Query(None),
     customer_code: str | None = Query(None),
     pricing_date: date | None = Query(None),
 ) -> CycleCompareResponse:
-    base_cycle = _require_cycle(db, base_cycle_id)
-    compare_cycle = _require_cycle(db, compare_cycle_id)
-    if base_cycle_id == compare_cycle_id:
+    bid = coerce_optional_int(base_cycle_id)
+    cid = coerce_optional_int(compare_cycle_id)
+    if not bid or not cid:
+        raise HTTPException(400, "Укажите корректные ID цикла A и B")
+    base_cycle = _require_cycle(db, bid)
+    compare_cycle = _require_cycle(db, cid)
+    if bid == cid:
         raise HTTPException(400, "Choose two different cycles")
 
     filters = build_filters(base_cycle, category, channel, customer_code)
@@ -636,8 +641,8 @@ def compare_cycles(
     grid = _to_grid(COMPARE_COLUMNS, row_dicts, editable=False)
 
     return CycleCompareResponse(
-        base_cycle_id=base_cycle_id,
-        compare_cycle_id=compare_cycle_id,
+        base_cycle_id=bid,
+        compare_cycle_id=cid,
         base_cycle_name=base_cycle.name,
         compare_cycle_name=compare_cycle.name,
         pricing_date=pdate,

@@ -9,6 +9,7 @@ import {
   compareCycles,
   createCycle,
   extractApiError,
+  parseOptionalInt,
   type CycleCompareResult,
   fetchChannelsGrid,
   fetchCustomersGrid,
@@ -175,25 +176,14 @@ export default function App() {
 
   useEffect(() => {
     if (activeTab !== "compare" || cycles.length < 2) return;
-
-    setCompareBaseId((base) => {
-      const resolvedBase =
-        base != null && cycles.some((c) => c.id === base)
-          ? base
-          : (selectedId ?? cycles[0].id);
-      setCompareOtherId((other) => {
-        if (
-          other != null &&
-          other !== resolvedBase &&
-          cycles.some((c) => c.id === other)
-        ) {
-          return other;
-        }
-        return cycles.find((c) => c.id !== resolvedBase)?.id ?? cycles[1].id;
-      });
-      return resolvedBase;
-    });
-  }, [activeTab, cycles, selectedId]);
+    const base =
+      selectedId && cycles.some((c) => c.id === selectedId)
+        ? selectedId
+        : cycles[0].id;
+    const other = cycles.find((c) => c.id !== base)?.id ?? cycles[1].id;
+    setCompareBaseId(base);
+    setCompareOtherId(other);
+  }, [activeTab, cycles.length, selectedId]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -376,14 +366,16 @@ export default function App() {
     (activeTab === "customers" && false);
 
   const runCompare = useCallback(async () => {
-    if (!compareBaseId || !compareOtherId || compareBaseId === compareOtherId) {
+    const baseId = parseOptionalInt(compareBaseId);
+    const otherId = parseOptionalInt(compareOtherId);
+    if (!baseId || !otherId || baseId === otherId) {
       setCompareResult(null);
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      const result = await compareCycles(compareBaseId, compareOtherId, calcFilters);
+      const result = await compareCycles(baseId, otherId, calcFilters);
       setCompareResult(result);
       setMessage(`Сравнение: ${result.base_cycle_name} vs ${result.compare_cycle_name}`);
     } catch (e: unknown) {
@@ -402,7 +394,9 @@ export default function App() {
   const pickOtherCycle = (baseId: number) =>
     cycles.find((c) => c.id !== baseId)?.id ?? null;
 
-  const handleCompareBaseChange = (id: number) => {
+  const handleCompareBaseChange = (raw: string) => {
+    const id = parseOptionalInt(raw);
+    if (!id) return;
     setCompareBaseId(id);
     if (id === compareOtherId) {
       const other = pickOtherCycle(id);
@@ -410,7 +404,9 @@ export default function App() {
     }
   };
 
-  const handleCompareOtherChange = (id: number) => {
+  const handleCompareOtherChange = (raw: string) => {
+    const id = parseOptionalInt(raw);
+    if (!id) return;
     setCompareOtherId(id);
     if (id === compareBaseId) {
       const base = pickOtherCycle(id);
@@ -667,7 +663,7 @@ export default function App() {
                 Цикл A (база)
                 <select
                   value={compareBaseId ?? ""}
-                  onChange={(e) => handleCompareBaseChange(Number(e.target.value))}
+                  onChange={(e) => handleCompareBaseChange(e.target.value)}
                 >
                   {cycles.map((c) => (
                     <option key={c.id} value={c.id}>
@@ -680,7 +676,7 @@ export default function App() {
                 Цикл B (сравнение)
                 <select
                   value={compareOtherId ?? ""}
-                  onChange={(e) => handleCompareOtherChange(Number(e.target.value))}
+                  onChange={(e) => handleCompareOtherChange(e.target.value)}
                 >
                   {cycles.map((c) => (
                     <option key={c.id} value={c.id}>
